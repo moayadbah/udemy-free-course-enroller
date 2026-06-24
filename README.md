@@ -15,10 +15,44 @@ to enroll you in those courses for free — no clicking, no copy-pasting.
 [![Download for macOS](https://img.shields.io/badge/Download-macOS%20(.dmg)-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/moayadbah/udemy-free-course-enroller/releases/latest/download/UdemyCourseEnroller.dmg)
 
 > Needs a Chromium browser (Brave/Chrome/Edge/Chromium) installed for the one-time login.
-> The app is unsigned — on **Windows** click *More info → Run anyway*; on **macOS** right-click
-> the app → *Open* the first time. (Links activate once the first release finishes building.)
+> The downloads are **unsigned**, so your OS warns you on first launch — see
+> [Opening the app](#opening-the-app-first-launch) just below.
 
 Prefer to run from source instead? See [Quick Start](#quick-start) below.
+
+---
+
+## Opening the app (first launch)
+
+Both downloads are **unsigned** (no paid Apple/Microsoft signing certificate), so your operating
+system will warn you the **first time** you open it. This is normal for indie/open-source apps and
+does **not** mean anything is wrong with the download — here's how to get past it.
+
+### macOS
+
+You'll see *"UdemyCourseEnroller cannot be opened because it is from an unidentified developer"*
+(or *"Apple could not verify it is free of malware"*). Use whichever works for your macOS version:
+
+1. **Right-click → Open (easiest).** In Finder, **Control-click** the app — or click it with
+   **two fingers** on the trackpad / right-click — then choose **Open**, and click **Open** again
+   in the dialog. macOS remembers your choice, so after this you can just double-click it.
+2. **Open Anyway (newer macOS, if step 1 shows no Open button).** Try to open it once (it gets
+   blocked), then go to  **System Settings → Privacy & Security**, scroll to the bottom, and next
+   to *"UdemyCourseEnroller was blocked…"* click **Open Anyway**, then confirm with your
+   password / Touch ID.
+3. **Terminal (power users).** Remove the quarantine flag, then open normally:
+   ```
+   xattr -dr com.apple.quarantine /Applications/UdemyCourseEnroller.app
+   ```
+
+> Tip: drag the app into your **Applications** folder first, then open it from there.
+
+### Windows
+
+SmartScreen shows *"Windows protected your PC"*. Click **More info**, then **Run anyway**.
+
+If you'd rather avoid these warnings entirely, run from source instead (see
+[Quick Start](#quick-start)).
 
 ---
 
@@ -109,8 +143,8 @@ required** for the one-time login.
 for Windows and `UdemyCourseEnroller.dmg` for macOS. They point at the latest GitHub
 **Release**, which is built and published automatically when a `v*` tag is pushed.
 
-> Windows SmartScreen / macOS Gatekeeper will warn about an unsigned app. On Windows
-> choose **More info → Run anyway**; on macOS right-click the app → **Open** the first time.
+> The downloads are unsigned, so your OS warns you on first launch — see
+> [Opening the app](#opening-the-app-first-launch) for the exact steps on macOS and Windows.
 
 **Build it yourself:**
 
