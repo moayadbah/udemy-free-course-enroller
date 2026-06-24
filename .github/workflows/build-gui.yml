@@ -1,0 +1,73 @@
+name: Build GUI Executable
+
+# Builds a single-file desktop app for Windows (.exe) and macOS (.dmg).
+# - Run manually (Actions -> Build GUI Executable -> Run workflow) to get per-run
+#   artifacts from the run's "Artifacts" section.
+# - Push a version tag (e.g. v1.0.0) to also publish a GitHub Release with the
+#   files attached, which is what the README download buttons link to.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # needed to create/update the Release
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: dist/UdemyCourseEnroller.exe
+          - os: macos-13 # Intel build: runs on Intel natively and Apple Silicon via Rosetta
+            asset: dist/UdemyCourseEnroller.dmg
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-build.txt
+
+      - name: Build executable
+        run: pyinstaller --noconfirm udemy_enroller_gui.spec
+
+      - name: Package .dmg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          hdiutil create -volname "Udemy Course Enroller" \
+            -srcfolder dist/UdemyCourseEnroller.app \
+            -ov -format UDZO dist/UdemyCourseEnroller.dmg
+
+      - name: Upload run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UdemyCourseEnroller-${{ runner.os }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+      - name: Publish to Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset }}
+          fail_on_unmatched_files: true
+          body: |
+            Single-file desktop app for the Udemy Course Enroller.
+
+            - Windows: download `UdemyCourseEnroller.exe`
+            - macOS: download `UdemyCourseEnroller.dmg` (Intel; runs on Apple Silicon via Rosetta)
+
+            A Chromium browser (Brave/Chrome/Edge/Chromium) is required for the one-time login.
+            The app is unsigned: on Windows choose "More info -> Run anyway"; on macOS right-click -> Open.
