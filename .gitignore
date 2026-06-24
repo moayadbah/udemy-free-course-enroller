@@ -106,6 +106,7 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!udemy_enroller_gui.spec
 
 # Installer logs
 pip-log.txt
