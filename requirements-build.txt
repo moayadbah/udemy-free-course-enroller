@@ -1,0 +1,5 @@
+# Dependencies for building the single-file GUI executable with PyInstaller.
+#   pip install -r requirements-build.txt
+#   pyinstaller udemy_enroller_gui.spec
+-r requirements.txt
+pyinstaller==6.11.1

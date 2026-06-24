@@ -1,0 +1,66 @@
+[tool.poetry]
+name = "udemy-enroller"
+version = "4.1.5"
+description = ""
+homepage = "https://github.com/aapatre/Automatic-Udemy-Course-Enroller-GET-PAID-UDEMY-COURSES-for-FREE"
+authors = ["aapatre <udemyenroller@gmail.com>", "fakeid <udemyenroller@gmail.com>", "cullzie <udemyenroller@gmail.com>"]
+readme = "README.md"
+keywords = ["udemy", "education", "enroll"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    "Programming Language :: Python :: 3.9",
+]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+# Rest based dependencies
+beautifulsoup4 = "4.14.0"
+"ruamel.yaml" = "0.18.15"
+cloudscraper = "1.2.71"
+requests = "2.32.5"
+aiohttp = {extras = ["speedups"], version = "3.12.15"}
+price-parser = "0.4.0"
+# UI based dependencies
+selenium = "4.35.0"
+webdriver-manager = "4.0.2"
+
+[tool.poetry.dev-dependencies]
+black = "^22.12.0"
+isort = "^5.12.0"
+pytest = "^7.4.0"
+pytest-cov = "^3.0.0"
+pytest-asyncio = "^0.18.3"
+bumpver = "^2022.1120"
+flake8 = "^5.0.4"
+flake8-bugbear = "^22.12.6"
+flake8-docstrings = "^1.7.0"
+flake8-isort = "^5.0.3"
+
+[tool.isort]
+profile = "black"
+
+[tool.bumpver]
+current_version = "v4.1.4"
+version_pattern = "vMAJOR.MINOR.PATCH"
+commit_message = "Bump version {old_version} -> {new_version}"
+commit = true
+tag = true
+push = false
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = [
+    'current_version = "{version}"',
+    '^version = "{pep440_version}"',
+]
+"setup.py" = [
+    'version="{pep440_version}"',
+]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+udemy_enroller = "udemy_enroller.cli:main"
