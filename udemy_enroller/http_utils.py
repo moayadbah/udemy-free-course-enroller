@@ -1,9 +1,17 @@
 """HTTP helpers."""
+import ssl
+
 import aiohttp
+import certifi
 
 from udemy_enroller.logger import get_logger
 
 logger = get_logger()
+
+# Verify HTTPS against certifi's CA bundle. aiohttp otherwise relies on the
+# system CA store, which is unavailable in frozen/packaged builds and causes
+# "certificate verify failed" errors (requests/cloudscraper already use certifi).
+_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 
 async def http_get(url, headers=None):
@@ -18,7 +26,9 @@ async def http_get(url, headers=None):
         headers = {}
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(
+                url, headers=headers, ssl=_SSL_CONTEXT
+            ) as response:
                 text = await response.read()
                 return text
     except Exception as e:
@@ -41,7 +51,7 @@ async def http_get_final_url(url, headers=None):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                url, headers=headers, allow_redirects=True
+                url, headers=headers, allow_redirects=True, ssl=_SSL_CONTEXT
             ) as response:
                 await response.read()
                 return str(response.url)
