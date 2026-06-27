@@ -499,8 +499,9 @@ class App(tk.Tk):
         udemy.setdefault("password", None)
         udemy.setdefault("zipcode", None)
 
-        langs_raw = self._var_languages.get().strip()
-        cats_raw = self._var_categories.get().strip()
+        # Accept the Arabic comma (،) as a separator too, not just the ASCII one.
+        langs_raw = self._var_languages.get().strip().replace("،", ",")
+        cats_raw = self._var_categories.get().strip().replace("،", ",")
         udemy["languages"] = (
             [lang.strip() for lang in langs_raw.split(",") if lang.strip()]
             if langs_raw

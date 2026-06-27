@@ -381,7 +381,8 @@ class UdemyActions:
         """
         is_preferred_language = True
         course_language = course_details["locale"]["simple_english_title"]
-        if course_language not in self.settings.languages:
+        wanted_languages = [lang.lower() for lang in self.settings.languages]
+        if course_language.lower() not in wanted_languages:
             logger.debug(
                 f"Course '{course_identifier}' language not wanted: {course_language}"
             )
@@ -401,11 +402,10 @@ class UdemyActions:
         """
         is_preferred_category = True
 
-        if (
-            course_details["primary_category"]["title"] not in self.settings.categories
-            and course_details["primary_subcategory"]["title"]
-            not in self.settings.categories
-        ):
+        wanted_categories = [cat.lower() for cat in self.settings.categories]
+        category = course_details["primary_category"]["title"].lower()
+        subcategory = course_details["primary_subcategory"]["title"].lower()
+        if category not in wanted_categories and subcategory not in wanted_categories:
             logger.debug(
                 f"Skipping course '{course_identifier}' as it does not have a wanted category"
             )
@@ -505,7 +505,16 @@ class UdemyActions:
                 "Chrome/149.0.0.0 Safari/537.36"
             )
         }
+        # Udemy rate-limits rapid course-page requests with HTTP 403. Back off
+        # and retry a few times (a single request succeeds; bursts get throttled).
         response = requests.get(url, headers=browser_headers)
+        for attempt in range(3):
+            if response.status_code != 403:
+                break
+            wait = 3 * (attempt + 1)
+            logger.debug(f"Rate-limited (403) on {url}; retrying in {wait}s")
+            time.sleep(wait)
+            response = requests.get(url, headers=browser_headers)
         response.raise_for_status()
         html = response.text
 
