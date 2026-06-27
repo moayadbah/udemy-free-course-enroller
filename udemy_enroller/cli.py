@@ -4,9 +4,8 @@ import logging
 import platform
 import sys
 from argparse import Namespace
+from importlib.metadata import PackageNotFoundError, distribution
 from typing import Tuple, Union
-
-from pkg_resources import DistributionNotFound, get_distribution
 
 from udemy_enroller import ALL_VALID_BROWSER_STRINGS, DriverManager, Settings
 from udemy_enroller.logger import get_logger
@@ -34,12 +33,10 @@ def log_package_details() -> None:
     :return: None
     """
     try:
-        distribution = get_distribution("udemy_enroller")
-        if distribution:
-            logger.debug(f"Name: {distribution.project_name}")
-            logger.debug(f"Version: {distribution.version}")
-            logger.debug(f"Location: {distribution.location}")
-    except DistributionNotFound:
+        dist = distribution("udemy_enroller")
+        logger.debug(f"Name: {dist.metadata['Name']}")
+        logger.debug(f"Version: {dist.version}")
+    except PackageNotFoundError:
         logger.debug("Not installed on python env.")
 
 
