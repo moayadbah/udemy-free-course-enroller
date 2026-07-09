@@ -4,41 +4,44 @@
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import messagebox, scrolledtext, ttk
+import webbrowser
+from tkinter import messagebox
 from typing import Dict, List, Optional, Tuple
+
+import customtkinter as ctk
+
+APP_VERSION = "1.2.0"
+GITHUB_REPO = "moayadbah/udemy-free-course-enroller"
+RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
+LATEST_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(os.path.expanduser("~"), ".udemy_enroller")
 COOKIE_FILE = os.path.join(APP_DIR, ".cookie")
 SETTINGS_FILE = os.path.join(APP_DIR, "settings.yaml")
+PREFS_FILE = os.path.join(APP_DIR, "gui_prefs.json")
 
 _SYS = platform.system()
 
 if _SYS == "Darwin":
-    _UI_FONT = "Helvetica Neue"
     _MONO_FONT = "Menlo"
 elif _SYS == "Windows":
-    _UI_FONT = "Segoe UI"
     _MONO_FONT = "Consolas"
 else:
-    _UI_FONT = "DejaVu Sans"
     _MONO_FONT = "DejaVu Sans Mono"
 
-# Palette
-_BG = "#eef1f5"
-_CARD_BG = "#ffffff"
-_CARD_BORDER = "#d7dde5"
-_ACCENT = "#1976d2"
-_TEXT = "#2c3440"
-_MUTED = "#6b7684"
+# Log terminal colours (fixed dark, independent of light/dark app mode)
+_LOG_BG = "#101418"
+_LOG_FG = "#d4d4d4"
 
-# (label shown in the dropdown, value passed to bridge_cookies.py)
+# (label shown in the dropdown, value passed to the driver manager)
 # These browsers are used only for the interactive login/bridge step; the
 # Cloudflare-bypass attach logic in driver_manager.py supports all of them.
 BROWSER_OPTIONS: List[Tuple[str, str]] = [
@@ -87,6 +90,16 @@ LANGUAGE_OPTIONS: List[str] = [
     "Polish",
 ]
 
+# Log-line markers → progress counter keys (each marks one processed course)
+_PROGRESS_MARKERS: List[Tuple[str, str]] = [
+    ("Successfully enrolled:", "enrolled"),
+    ("Already enrolled in:", "already"),
+    ("language not wanted", "skipped"),
+    ("does not have a wanted category", "skipped"),
+    ("as it now costs", "expired"),
+    ("as it is always FREE", "expired"),
+]
+
 
 def _cookie_valid() -> bool:
     """Return True if the cookie file exists and contains an access_token."""
@@ -130,6 +143,25 @@ def _save_yaml(data: Dict) -> None:
         yaml.dump(data, f)
 
 
+def _load_prefs() -> Dict:
+    """Load remembered GUI preferences; empty dict when missing/corrupt."""
+    try:
+        with open(PREFS_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_prefs(prefs: Dict) -> None:
+    """Persist GUI preferences; failures are non-fatal."""
+    try:
+        os.makedirs(APP_DIR, exist_ok=True)
+        with open(PREFS_FILE, "w") as f:
+            json.dump(prefs, f, indent=2)
+    except Exception:
+        pass
+
+
 def _find_enroller_cmd(flags: List[str]) -> List[str]:
     """Return the command list to invoke udemy_enroller with *flags*."""
     if getattr(sys, "frozen", False):
@@ -146,298 +178,249 @@ def _find_enroller_cmd(flags: List[str]) -> List[str]:
     return [sys.executable, "-c", snippet]
 
 
-class App(tk.Tk):
+class App(ctk.CTk):
     """Main application window."""
 
     def __init__(self):
         """Initialize."""
+        prefs = _load_prefs()
+        appearance = prefs.get("appearance", "Dark")
+        ctk.set_appearance_mode(appearance.lower())
+        ctk.set_default_color_theme("blue")
         super().__init__()
         self.title("Udemy Course Enroller")
-        self.geometry("1000x800")
-        self.minsize(880, 680)
-        self.configure(bg=_BG)
+        self.geometry("1020x820")
+        self.minsize(900, 700)
         self._process: Optional[subprocess.Popen] = None
         self._stop_event = threading.Event()
         self._bridging = False
+        self._progress_determinate = False
+        self._prog: Dict = {}
+        self._reset_progress()
         self._build_ui()
+        self._apply_prefs(prefs)
         self._refresh_status()
         self._load_filter_settings()
         self._update_bridge_label()
         self._update_run_summary()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        threading.Thread(target=self._check_updates, daemon=True).start()
 
     # ── UI construction ──────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        self._init_styles()
+        self._init_fonts()
+        self._build_header()
 
-        wrap = ttk.Frame(self, padding=(16, 14))
-        wrap.pack(fill=tk.BOTH, expand=True)
+        ctk.CTkLabel(
+            self,
+            text=f"v{APP_VERSION}",
+            font=self._font_hint,
+            text_color=("gray55", "gray45"),
+        ).pack(side="bottom", anchor="e", padx=20, pady=(0, 6))
 
-        ttk.Label(
-            wrap,
-            text="Udemy Course Enroller",
-            style="Title.TLabel",
-        ).pack(anchor="w")
-        ttk.Label(
-            wrap,
-            text="Auto-enroll in free Udemy courses using coupon scrapers",
-            style="Subtitle.TLabel",
-        ).pack(anchor="w", pady=(2, 10))
-
-        self._notebook = ttk.Notebook(wrap)
-        self._notebook.pack(fill=tk.BOTH, expand=True)
-
-        setup_tab = ttk.Frame(self._notebook, padding=(14, 14, 8, 14))
-        self._run_tab = ttk.Frame(self._notebook, padding=14)
-        self._notebook.add(setup_tab, text="  Setup  ")
-        self._notebook.add(self._run_tab, text="  Run  ")
+        self._tabs = ctk.CTkTabview(
+            self, corner_radius=10, command=self._update_run_summary
+        )
+        self._tabs.pack(fill="both", expand=True, padx=16, pady=(4, 2))
+        setup_tab = self._tabs.add("  Setup  ")
+        run_tab = self._tabs.add("  Run  ")
 
         self._build_setup_tab(setup_tab)
-        self._build_run_tab(self._run_tab)
+        self._build_run_tab(run_tab)
 
-        self._notebook.bind("<<NotebookTabChanged>>", self._update_run_summary)
-        self._bind_setup_scroll()
+    def _init_fonts(self) -> None:
+        self._font_title = ctk.CTkFont(size=22, weight="bold")
+        self._font_card_title = ctk.CTkFont(size=15, weight="bold")
+        self._font_bold = ctk.CTkFont(size=13, weight="bold")
+        self._font_body = ctk.CTkFont(size=12)
+        self._font_hint = ctk.CTkFont(size=11)
+        self._font_badge = ctk.CTkFont(size=12, weight="bold")
+        self._font_button = ctk.CTkFont(size=14, weight="bold")
+        self._font_mono = ctk.CTkFont(family=_MONO_FONT, size=12)
 
-    def _init_styles(self) -> None:
-        style = ttk.Style(self)
-        style.theme_use("clam")
-        style.configure(".", background=_BG, font=(_UI_FONT, 12))
-        style.configure("TFrame", background=_BG)
-        style.configure("TLabel", background=_BG, font=(_UI_FONT, 12))
-        style.configure("TSpinbox", font=(_UI_FONT, 11))
-        style.configure("TEntry", font=(_UI_FONT, 11))
-        style.configure("TCombobox", font=(_UI_FONT, 11))
-        style.configure("TButton", font=(_UI_FONT, 11), padding=6)
-        style.configure("TNotebook", background=_BG, borderwidth=0)
-        style.configure("TNotebook.Tab", font=(_UI_FONT, 11, "bold"), padding=(20, 9))
-        style.configure(
-            "Title.TLabel",
-            font=(_UI_FONT, 18, "bold"),
-            background=_BG,
-            foreground=_TEXT,
-        )
-        style.configure(
-            "Subtitle.TLabel", font=(_UI_FONT, 10), foreground=_MUTED, background=_BG
-        )
-        style.configure(
-            "Section.TLabel",
-            font=(_UI_FONT, 14, "bold"),
-            background=_BG,
-            foreground=_TEXT,
-        )
-        self._init_card_styles(style)
-        self._init_button_styles(style)
+    def _build_header(self) -> None:
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=(16, 4))
 
-    def _init_card_styles(self, style: ttk.Style) -> None:
-        style.configure(
-            "Card.TLabelframe",
-            background=_CARD_BG,
-            borderwidth=1,
-            relief="solid",
-            bordercolor=_CARD_BORDER,
+        left = ctk.CTkFrame(header, fg_color="transparent")
+        left.pack(side="left")
+        ctk.CTkLabel(left, text="Udemy Course Enroller", font=self._font_title).pack(
+            anchor="w"
         )
-        style.configure(
-            "Card.TLabelframe.Label",
-            background=_CARD_BG,
-            font=(_UI_FONT, 12, "bold"),
-            foreground=_TEXT,
-        )
-        style.configure("Card.TFrame", background=_CARD_BG)
-        style.configure("Card.TLabel", background=_CARD_BG, font=(_UI_FONT, 11))
-        style.configure(
-            "CardBold.TLabel",
-            background=_CARD_BG,
-            font=(_UI_FONT, 12, "bold"),
-            foreground=_TEXT,
-        )
-        style.configure(
-            "CardHint.TLabel",
-            background=_CARD_BG,
-            font=(_UI_FONT, 10),
-            foreground=_MUTED,
-        )
-        style.configure("Status.TLabel", background=_CARD_BG, font=(_UI_FONT, 11))
-        style.configure("Card.TCheckbutton", background=_CARD_BG, font=(_UI_FONT, 11))
-        style.map("Card.TCheckbutton", background=[("active", _CARD_BG)])
-        style.configure("Horizontal.TProgressbar", background=_ACCENT, troughcolor=_BG)
+        ctk.CTkLabel(
+            left,
+            text="Auto-enroll in free Udemy courses using coupon scrapers",
+            font=self._font_hint,
+            text_color=("gray40", "gray60"),
+        ).pack(anchor="w")
 
-    def _init_button_styles(self, style: ttk.Style) -> None:
-        style.configure("Small.TButton", font=(_UI_FONT, 10), padding=3)
-        style.configure("Primary.TButton", font=(_UI_FONT, 13, "bold"), padding=10)
-        style.configure("Danger.TButton", font=(_UI_FONT, 11), padding=6)
-        style.map(
-            "Primary.TButton",
-            foreground=[("active", "white"), ("!disabled", "white")],
-            background=[("active", "#1565c0"), ("!disabled", _ACCENT)],
+        self._var_appearance = tk.StringVar(value="Dark")
+        ctk.CTkSegmentedButton(
+            header,
+            values=["System", "Light", "Dark"],
+            variable=self._var_appearance,
+            command=self._set_appearance,
+            font=self._font_hint,
+            height=26,
+        ).pack(side="right")
+
+        # Shown by the update checker only when a newer release exists
+        self._btn_update = ctk.CTkButton(
+            header,
+            text="Update available ↗",
+            font=self._font_hint,
+            height=26,
+            width=150,
+            fg_color=("#2e7d32", "#1b5e20"),
+            hover_color=("#1b5e20", "#144a19"),
+            command=lambda: webbrowser.open(RELEASES_URL),
         )
-        style.map(
-            "Danger.TButton",
-            foreground=[("active", "white"), ("disabled", "#999999")],
-            background=[
-                ("active", "#b71c1c"),
-                ("disabled", "#dddddd"),
-                ("!disabled", "#d32f2f"),
-            ],
+
+    def _set_appearance(self, value: str) -> None:
+        ctk.set_appearance_mode(value.lower())
+        self._persist_prefs()
+
+    def _card(self, parent, title: str) -> ctk.CTkFrame:
+        """Create a rounded section card; return its content frame."""
+        card = ctk.CTkFrame(parent, corner_radius=12)
+        card.pack(fill="x", pady=(0, 12))
+        ctk.CTkLabel(card, text=title, font=self._font_card_title).pack(
+            anchor="w", padx=16, pady=(12, 0)
         )
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=16, pady=(4, 14))
+        return body
+
+    def _ghost_button(self, parent, text: str, command) -> ctk.CTkButton:
+        """Small bordered secondary button."""
+        return ctk.CTkButton(
+            parent,
+            text=text,
+            command=command,
+            font=self._font_hint,
+            width=64,
+            height=26,
+            fg_color="transparent",
+            border_width=1,
+            border_color=("gray60", "gray40"),
+            text_color=("gray25", "gray75"),
+            hover_color=("gray85", "gray25"),
+        )
+
+    def _hint(self, parent, text: str, **pack_kw) -> None:
+        ctk.CTkLabel(
+            parent,
+            text=text,
+            font=self._font_hint,
+            text_color=("gray40", "gray60"),
+            justify="left",
+            wraplength=780,
+        ).pack(anchor="w", **pack_kw)
 
     # ── Setup tab ────────────────────────────────────────────────────────────
 
-    def _build_setup_tab(self, parent: ttk.Frame) -> None:
-        # The filter checkbox grids make this tab tall, so it scrolls.
-        self._setup_canvas = tk.Canvas(parent, bg=_BG, highlightthickness=0, bd=0)
-        vsb = ttk.Scrollbar(parent, orient="vertical", command=self._setup_canvas.yview)
-        self._setup_canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        self._setup_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        inner = ttk.Frame(self._setup_canvas, padding=(0, 0, 10, 0))
-        window = self._setup_canvas.create_window((0, 0), window=inner, anchor="nw")
-        inner.bind(
-            "<Configure>",
-            lambda e: self._setup_canvas.configure(
-                scrollregion=self._setup_canvas.bbox("all")
-            ),
-        )
-        self._setup_canvas.bind(
-            "<Configure>",
-            lambda e: self._setup_canvas.itemconfigure(window, width=e.width),
-        )
+    def _build_setup_tab(self, parent) -> None:
+        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+        scroll.pack(fill="both", expand=True)
 
         # Ordered for a first-time user: explain the flow, then the one required
         # choice (browser), then optional tweaks, then the readiness check last.
-        self._build_getting_started_section(inner)
-        self._build_browser_section(inner)
-        self._build_scraper_section(inner)
-        self._build_filter_section(inner)
-        self._build_status_section(inner)
+        self._build_getting_started_section(scroll)
+        self._build_browser_section(scroll)
+        self._build_scraper_section(scroll)
+        self._build_filter_section(scroll)
+        self._build_status_section(scroll)
 
-    def _bind_setup_scroll(self) -> None:
-        """Route mouse-wheel events to the Setup canvas while that tab shows."""
-        if _SYS == "Linux":
-            self.bind_all("<Button-4>", lambda e: self._on_setup_wheel(-1))
-            self.bind_all("<Button-5>", lambda e: self._on_setup_wheel(1))
-        else:
-            self.bind_all("<MouseWheel>", self._on_setup_wheel_event)
-
-    def _on_setup_wheel_event(self, event) -> None:
-        if _SYS == "Windows":
-            step = -int(event.delta / 120)
-        else:
-            step = -1 if event.delta > 0 else 1
-        self._on_setup_wheel(step)
-
-    def _on_setup_wheel(self, step: int) -> None:
-        try:
-            on_setup = self._notebook.index(self._notebook.select()) == 0
-        except Exception:
-            return
-        if on_setup and step:
-            self._setup_canvas.yview_scroll(step, "units")
-
-    def _build_getting_started_section(self, parent: ttk.Frame) -> None:
-        box = ttk.LabelFrame(
-            parent, text=" Getting Started ", style="Card.TLabelframe", padding=14
-        )
-        box.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(
-            box,
+    def _build_getting_started_section(self, parent) -> None:
+        body = self._card(parent, "Getting Started")
+        ctk.CTkLabel(
+            body,
             text="New here? Three steps to your first free courses:",
-            style="CardBold.TLabel",
+            font=self._font_bold,
         ).pack(anchor="w")
 
         self._add_step(
-            box,
+            body,
             1,
             "Pick your login browser",
             "Right below — choose whichever browser you have installed.",
         )
         self._add_step(
-            box,
+            body,
             2,
             "Log in to Udemy once",
             'Run tab → "Bridge Cookies". Enter your email, password, and the '
             "6-digit code Udemy emails you. This turns the status below green.",
         )
         self._add_step(
-            box,
+            body,
             3,
             "Start enrolling",
-            'Run tab → "Start Enrollment", then watch the log fill up.',
+            'Run tab → "Start Enrollment", then watch the progress bar and log.',
         )
 
-        ttk.Label(
-            box,
-            text="Logged-in sessions last days — repeat step 2 only when needed.",
-            style="CardHint.TLabel",
-        ).pack(anchor="w", pady=(8, 0))
+        self._hint(
+            body,
+            "Logged-in sessions last days — repeat step 2 only when needed.",
+            pady=(10, 0),
+        )
 
-    def _add_step(
-        self, parent: ttk.Frame, number: int, action: str, detail: str
-    ) -> None:
-        row = ttk.Frame(parent, style="Card.TFrame")
-        row.pack(fill=tk.X, pady=(8, 0))
-        tk.Label(
+    def _add_step(self, parent, number: int, action: str, detail: str) -> None:
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=(10, 0))
+        ctk.CTkLabel(
             row,
-            text=f" {number} ",
-            bg=_ACCENT,
-            fg="white",
-            font=(_UI_FONT, 11, "bold"),
-        ).pack(side=tk.LEFT, padx=(0, 10), anchor="n")
-        text_col = ttk.Frame(row, style="Card.TFrame")
-        text_col.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Label(text_col, text=action, style="CardBold.TLabel").pack(anchor="w")
-        ttk.Label(text_col, text=detail, style="CardHint.TLabel", justify=tk.LEFT).pack(
-            anchor="w"
+            text=str(number),
+            width=26,
+            height=26,
+            corner_radius=13,
+            fg_color=("#3B8ED0", "#1F6AA5"),
+            text_color="white",
+            font=self._font_badge,
+        ).pack(side="left", padx=(0, 12), anchor="n")
+        col = ctk.CTkFrame(row, fg_color="transparent")
+        col.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(col, text=action, font=self._font_bold).pack(anchor="w")
+        ctk.CTkLabel(
+            col,
+            text=detail,
+            font=self._font_hint,
+            text_color=("gray40", "gray60"),
+            justify="left",
+            wraplength=740,
+        ).pack(anchor="w")
+
+    def _build_browser_section(self, parent) -> None:
+        body = self._card(parent, "Login Browser")
+        self._hint(
+            body,
+            "Used by the Bridge Cookies step to log in past Cloudflare. "
+            "Enrollment itself uses fast REST mode (no browser window).",
+            pady=(0, 8),
         )
-
-    def _build_browser_section(self, parent: ttk.Frame) -> None:
-        box = ttk.LabelFrame(
-            parent, text=" Login Browser ", style="Card.TLabelframe", padding=14
-        )
-        box.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(
-            box,
-            text=(
-                "Used by the Bridge Cookies step to log in past Cloudflare. "
-                "Enrollment itself uses fast REST mode (no browser window)."
-            ),
-            style="CardHint.TLabel",
-        ).pack(anchor="w", pady=(0, 8))
-
-        row = ttk.Frame(box, style="Card.TFrame")
-        row.pack(fill=tk.X)
-        ttk.Label(row, text="Browser:", style="Card.TLabel").pack(side=tk.LEFT)
+        row = ctk.CTkFrame(body, fg_color="transparent")
+        row.pack(fill="x")
+        ctk.CTkLabel(row, text="Browser:", font=self._font_body).pack(side="left")
         browser_labels = [label for label, _ in BROWSER_OPTIONS]
         self._var_browser_label = tk.StringVar(value=browser_labels[0])
-        combo = ttk.Combobox(
+        ctk.CTkOptionMenu(
             row,
-            textvariable=self._var_browser_label,
             values=browser_labels,
-            state="readonly",
-            width=18,
-        )
-        combo.pack(side=tk.LEFT, padx=8)
-        combo.bind("<<ComboboxSelected>>", self._update_bridge_label)
-        self._mute_widget_wheel(combo)
+            variable=self._var_browser_label,
+            command=self._on_browser_change,
+            font=self._font_body,
+            width=160,
+            height=30,
+        ).pack(side="left", padx=10)
 
-    def _mute_widget_wheel(self, widget) -> None:
-        """Stop the wheel from changing a widget's value while scrolling past."""
-        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-            widget.bind(seq, lambda e: "break")
+    def _on_browser_change(self, *_) -> None:
+        self._update_bridge_label()
+        self._persist_prefs()
 
-    def _build_scraper_section(self, parent: ttk.Frame) -> None:
-        box = ttk.LabelFrame(
-            parent, text=" Scrapers ", style="Card.TLabelframe", padding=14
-        )
-        box.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(
-            box,
-            text="Coupon sites to scan for free-course codes.",
-            style="CardHint.TLabel",
-        ).pack(anchor="w", pady=(0, 6))
+    def _build_scraper_section(self, parent) -> None:
+        body = self._card(parent, "Scrapers")
+        self._hint(body, "Coupon sites to scan for free-course codes.", pady=(0, 8))
 
         self._var_discudemy = tk.BooleanVar(value=True)
         self._var_idc = tk.BooleanVar(value=True)
@@ -445,126 +428,127 @@ class App(tk.Tk):
         self._var_tutbar = tk.BooleanVar(value=False)
         self._var_cvania = tk.BooleanVar(value=False)
 
-        row1 = ttk.Frame(box, style="Card.TFrame")
-        row1.pack(fill=tk.X)
-        ttk.Checkbutton(
-            row1,
-            text="discudemy",
-            variable=self._var_discudemy,
-            style="Card.TCheckbutton",
-        ).pack(side=tk.LEFT, padx=(0, 20))
-        ttk.Checkbutton(
-            row1,
-            text="idownloadcoupon",
-            variable=self._var_idc,
-            style="Card.TCheckbutton",
-        ).pack(side=tk.LEFT, padx=(0, 20))
-        ttk.Checkbutton(
-            row1,
-            text="freebiesglobal",
-            variable=self._var_fbg,
-            style="Card.TCheckbutton",
-        ).pack(side=tk.LEFT)
+        grid = ctk.CTkFrame(body, fg_color="transparent")
+        grid.pack(fill="x")
+        scrapers = [
+            ("discudemy", self._var_discudemy),
+            ("idownloadcoupon", self._var_idc),
+            ("freebiesglobal", self._var_fbg),
+            ("tutorialbar  ⚠ offline", self._var_tutbar),
+            ("coursevania  ⚠ JS-blocked", self._var_cvania),
+        ]
+        for i, (name, var) in enumerate(scrapers):
+            ctk.CTkCheckBox(
+                grid,
+                text=name,
+                variable=var,
+                command=self._on_pref_change,
+                font=self._font_body,
+                checkbox_width=19,
+                checkbox_height=19,
+            ).grid(row=i // 3, column=i % 3, sticky="w", padx=(0, 24), pady=4)
 
-        row2 = ttk.Frame(box, style="Card.TFrame")
-        row2.pack(fill=tk.X, pady=(4, 0))
-        ttk.Checkbutton(
-            row2,
-            text="tutorialbar  ⚠ offline",
-            variable=self._var_tutbar,
-            style="Card.TCheckbutton",
-        ).pack(side=tk.LEFT, padx=(0, 20))
-        ttk.Checkbutton(
-            row2,
-            text="coursevania  ⚠ JS-blocked",
-            variable=self._var_cvania,
-            style="Card.TCheckbutton",
-        ).pack(side=tk.LEFT)
-
-        opts = ttk.Frame(box, style="Card.TFrame")
-        opts.pack(fill=tk.X, pady=(10, 0))
-        ttk.Label(opts, text="Max pages per scraper:", style="Card.TLabel").pack(
-            side=tk.LEFT
+        opts = ctk.CTkFrame(body, fg_color="transparent")
+        opts.pack(fill="x", pady=(12, 0))
+        ctk.CTkLabel(opts, text="Max pages per scraper:", font=self._font_body).pack(
+            side="left"
         )
         self._var_pages = tk.IntVar(value=5)
-        spin = ttk.Spinbox(opts, from_=1, to=50, width=5, textvariable=self._var_pages)
-        spin.pack(side=tk.LEFT, padx=8)
-        self._mute_widget_wheel(spin)
+        self._slider_pages = ctk.CTkSlider(
+            opts,
+            from_=1,
+            to=20,
+            number_of_steps=19,
+            width=220,
+            command=self._on_pages_slide,
+        )
+        self._slider_pages.set(5)
+        self._slider_pages.pack(side="left", padx=10)
+        self._lbl_pages = ctk.CTkLabel(opts, text="5", font=self._font_bold, width=26)
+        self._lbl_pages.pack(side="left")
+
         self._var_debug = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
+        ctk.CTkSwitch(
             opts,
             text="Debug logging",
             variable=self._var_debug,
-            style="Card.TCheckbutton",
-        ).pack(side=tk.LEFT, padx=(16, 0))
+            command=self._on_pref_change,
+            font=self._font_body,
+        ).pack(side="left", padx=(28, 0))
 
-    def _build_filter_section(self, parent: ttk.Frame) -> None:
-        box = ttk.LabelFrame(
-            parent, text=" Course Filters ", style="Card.TLabelframe", padding=14
+    def _on_pages_slide(self, value: float) -> None:
+        pages = int(round(value))
+        self._var_pages.set(pages)
+        self._lbl_pages.configure(text=str(pages))
+
+    def _on_pref_change(self, *_) -> None:
+        self._persist_prefs()
+        self._update_run_summary()
+
+    def _build_filter_section(self, parent) -> None:
+        body = self._card(parent, "Course Filters")
+        self._hint(
+            body,
+            "Only enroll in courses that match your picks. "
+            "Nothing selected = accept everything. Saved before each run.",
         )
-        box.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(
-            box,
-            text=(
-                "Only enroll in courses that match your picks. "
-                "Nothing selected = accept everything. Saved before each run."
-            ),
-            style="CardHint.TLabel",
-        ).pack(anchor="w")
 
         self._lang_vars: Dict[str, tk.BooleanVar] = {}
         self._var_lang_other = tk.StringVar()
         self._build_choice_group(
-            box, "Languages", LANGUAGE_OPTIONS, self._lang_vars, self._var_lang_other
+            body, "Languages", LANGUAGE_OPTIONS, self._lang_vars, self._var_lang_other
         )
 
         self._cat_vars: Dict[str, tk.BooleanVar] = {}
         self._var_cat_other = tk.StringVar()
         self._build_choice_group(
-            box, "Categories", CATEGORY_OPTIONS, self._cat_vars, self._var_cat_other
+            body, "Categories", CATEGORY_OPTIONS, self._cat_vars, self._var_cat_other
         )
 
     def _build_choice_group(
         self,
-        parent: ttk.Frame,
+        parent,
         title: str,
         options: List[str],
         vars_dict: Dict[str, tk.BooleanVar],
         other_var: tk.StringVar,
     ) -> None:
-        hdr = ttk.Frame(parent, style="Card.TFrame")
-        hdr.pack(fill=tk.X, pady=(10, 2))
-        ttk.Label(hdr, text=title, style="CardBold.TLabel").pack(side=tk.LEFT)
-        ttk.Button(
-            hdr,
-            text="Clear",
-            style="Small.TButton",
-            command=lambda: self._clear_choices(vars_dict, other_var),
-        ).pack(side=tk.RIGHT)
+        hdr = ctk.CTkFrame(parent, fg_color="transparent")
+        hdr.pack(fill="x", pady=(12, 4))
+        ctk.CTkLabel(hdr, text=title, font=self._font_bold).pack(side="left")
+        self._ghost_button(
+            hdr, "Clear", lambda: self._clear_choices(vars_dict, other_var)
+        ).pack(side="right")
 
-        grid = ttk.Frame(parent, style="Card.TFrame")
-        grid.pack(fill=tk.X)
+        grid = ctk.CTkFrame(parent, fg_color="transparent")
+        grid.pack(fill="x")
         for i, name in enumerate(options):
             var = tk.BooleanVar(value=False)
             vars_dict[name] = var
-            ttk.Checkbutton(
-                grid, text=name, variable=var, style="Card.TCheckbutton"
-            ).grid(row=i // 4, column=i % 4, sticky="w", padx=(0, 12), pady=2)
+            ctk.CTkCheckBox(
+                grid,
+                text=name,
+                variable=var,
+                command=self._update_run_summary,
+                font=self._font_body,
+                checkbox_width=19,
+                checkbox_height=19,
+            ).grid(row=i // 4, column=i % 4, sticky="w", padx=(0, 12), pady=4)
         for col in range(4):
             grid.columnconfigure(col, weight=1)
 
-        other_row = ttk.Frame(parent, style="Card.TFrame")
-        other_row.pack(fill=tk.X, pady=(4, 0))
-        ttk.Label(other_row, text="Other:", style="Card.TLabel").pack(side=tk.LEFT)
-        ttk.Entry(other_row, textvariable=other_var, width=32).pack(
-            side=tk.LEFT, padx=8
+        other_row = ctk.CTkFrame(parent, fg_color="transparent")
+        other_row.pack(fill="x", pady=(6, 0))
+        ctk.CTkLabel(other_row, text="Other:", font=self._font_body).pack(side="left")
+        ctk.CTkEntry(other_row, textvariable=other_var, width=260, height=28).pack(
+            side="left", padx=10
         )
-        ttk.Label(
+        ctk.CTkLabel(
             other_row,
             text="anything not listed, comma-separated (optional)",
-            style="CardHint.TLabel",
-        ).pack(side=tk.LEFT)
+            font=self._font_hint,
+            text_color=("gray45", "gray55"),
+        ).pack(side="left")
 
     def _clear_choices(
         self, vars_dict: Dict[str, tk.BooleanVar], other_var: tk.StringVar
@@ -572,129 +556,311 @@ class App(tk.Tk):
         for var in vars_dict.values():
             var.set(False)
         other_var.set("")
+        self._update_run_summary()
 
-    def _build_status_section(self, parent: ttk.Frame) -> None:
-        box = ttk.LabelFrame(
-            parent, text=" Setup Status ", style="Card.TLabelframe", padding=14
-        )
-        box.pack(fill=tk.X, pady=(0, 10))
+    def _build_status_section(self, parent) -> None:
+        body = self._card(parent, "Setup Status")
 
-        r1 = ttk.Frame(box, style="Card.TFrame")
-        r1.pack(fill=tk.X, pady=1)
-        self._dot_settings = tk.Label(
-            r1, text="●", font=(_UI_FONT, 14), bg=_CARD_BG, fg="#999999"
+        r1 = ctk.CTkFrame(body, fg_color="transparent")
+        r1.pack(fill="x", pady=2)
+        self._dot_settings = ctk.CTkLabel(
+            r1, text="●", font=self._font_bold, text_color="gray", width=16
         )
-        self._dot_settings.pack(side=tk.LEFT)
-        self._lbl_settings = ttk.Label(r1, text="Checking…", style="Status.TLabel")
-        self._lbl_settings.pack(side=tk.LEFT, padx=6)
-        ttk.Button(
-            r1, text="Refresh", style="Small.TButton", command=self._refresh_status
-        ).pack(side=tk.RIGHT)
+        self._dot_settings.pack(side="left")
+        self._lbl_settings = ctk.CTkLabel(r1, text="Checking…", font=self._font_body)
+        self._lbl_settings.pack(side="left", padx=8)
+        self._ghost_button(r1, "Refresh", self._refresh_status).pack(side="right")
 
-        r2 = ttk.Frame(box, style="Card.TFrame")
-        r2.pack(fill=tk.X, pady=1)
-        self._dot_cookie = tk.Label(
-            r2, text="●", font=(_UI_FONT, 14), bg=_CARD_BG, fg="#999999"
+        r2 = ctk.CTkFrame(body, fg_color="transparent")
+        r2.pack(fill="x", pady=2)
+        self._dot_cookie = ctk.CTkLabel(
+            r2, text="●", font=self._font_bold, text_color="gray", width=16
         )
-        self._dot_cookie.pack(side=tk.LEFT)
-        self._lbl_cookie = ttk.Label(r2, text="Checking…", style="Status.TLabel")
-        self._lbl_cookie.pack(side=tk.LEFT, padx=6)
-        self._btn_login_now = ttk.Button(
-            r2, text="Log in now →", style="Small.TButton", command=self._go_login
+        self._dot_cookie.pack(side="left")
+        self._lbl_cookie = ctk.CTkLabel(r2, text="Checking…", font=self._font_body)
+        self._lbl_cookie.pack(side="left", padx=8)
+        self._btn_login_now = ctk.CTkButton(
+            r2,
+            text="Log in now →",
+            command=self._go_login,
+            font=self._font_hint,
+            width=110,
+            height=26,
         )
 
     def _go_login(self) -> None:
         """Jump to the Run tab and start the login (bridge) flow."""
-        self._notebook.select(self._run_tab)
+        self._tabs.set("  Run  ")
         self._bridge_cookies()
 
     # ── Run tab ──────────────────────────────────────────────────────────────
 
-    def _build_run_tab(self, parent: ttk.Frame) -> None:
-        actions = ttk.Frame(parent)
-        actions.pack(fill=tk.X, pady=(0, 4))
+    def _build_run_tab(self, parent) -> None:
+        actions = ctk.CTkFrame(parent, fg_color="transparent")
+        actions.pack(fill="x", pady=(4, 6))
 
-        self._btn_bridge = ttk.Button(
+        self._btn_bridge = ctk.CTkButton(
             actions,
             text="Bridge Cookies",
             command=self._bridge_cookies,
+            font=self._font_body,
+            height=38,
+            fg_color="transparent",
+            border_width=1,
+            border_color=("gray55", "gray45"),
+            text_color=("gray20", "gray85"),
+            hover_color=("gray85", "gray25"),
         )
-        self._btn_bridge.pack(side=tk.LEFT, padx=(0, 10))
-        self._btn_start = ttk.Button(
+        self._btn_bridge.pack(side="left", padx=(0, 10))
+        self._btn_start = ctk.CTkButton(
             actions,
             text="Start Enrollment",
-            style="Primary.TButton",
             command=self._start_enrollment,
+            font=self._font_button,
+            height=38,
         )
-        self._btn_start.pack(side=tk.LEFT, padx=(0, 6))
-        self._btn_stop = ttk.Button(
+        self._btn_start.pack(side="left", padx=(0, 10))
+        self._btn_stop = ctk.CTkButton(
             actions,
             text="Stop",
-            style="Danger.TButton",
-            state=tk.DISABLED,
             command=self._stop_enrollment,
+            font=self._font_body,
+            height=38,
+            width=80,
+            state="disabled",
+            fg_color="#c62828",
+            hover_color="#8e0000",
         )
-        self._btn_stop.pack(side=tk.LEFT)
-        self._progress = ttk.Progressbar(actions, mode="indeterminate", length=140)
+        self._btn_stop.pack(side="left")
 
-        self._lbl_summary = ttk.Label(parent, text="", style="Subtitle.TLabel")
-        self._lbl_summary.pack(anchor="w", pady=(0, 8))
+        self._progress_row = ctk.CTkFrame(parent, fg_color="transparent")
+        self._progress = ctk.CTkProgressBar(self._progress_row, mode="indeterminate")
+        self._progress.pack(side="left", fill="x", expand=True)
+        self._lbl_progress = ctk.CTkLabel(
+            self._progress_row, text="", font=self._font_hint
+        )
+        self._lbl_progress.pack(side="left", padx=(12, 0))
 
-        log_hdr = ttk.Frame(parent)
-        log_hdr.pack(fill=tk.X)
-        ttk.Label(log_hdr, text="Log", style="Section.TLabel").pack(side=tk.LEFT)
-        ttk.Button(
-            log_hdr, text="Clear log", style="Small.TButton", command=self._clear_log
-        ).pack(side=tk.RIGHT)
-
-        self._log = scrolledtext.ScrolledText(
+        self._lbl_summary = ctk.CTkLabel(
             parent,
-            font=(_MONO_FONT, 11),
-            bg="#1e1e1e",
-            fg="#d4d4d4",
-            insertbackground="#d4d4d4",
-            selectbackground="#264f78",
-            state=tk.DISABLED,
-            wrap=tk.WORD,
+            text="",
+            font=self._font_hint,
+            text_color=("gray40", "gray60"),
+            anchor="w",
         )
-        self._log.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
-        self._log.tag_configure("error", foreground="#f48771")
-        self._log.tag_configure("success", foreground="#89d185")
-        self._log.tag_configure("info", foreground="#569cd6")
-        self._log.tag_configure("warn", foreground="#dcdcaa")
-        self._log.tag_configure("stats", foreground="#c586c0")
-        self._log.tag_configure("dim", foreground="#808080")
+        self._lbl_summary.pack(fill="x", pady=(2, 6))
+
+        # End-of-run result banner (hidden until a run completes)
+        self._result_card = ctk.CTkFrame(
+            parent, corner_radius=10, fg_color=("#dcefdc", "#1e3320")
+        )
+        self._lbl_result = ctk.CTkLabel(
+            self._result_card, text="", font=self._font_bold
+        )
+        self._lbl_result.pack(padx=14, pady=8, anchor="w")
+
+        log_hdr = ctk.CTkFrame(parent, fg_color="transparent")
+        log_hdr.pack(fill="x")
+        ctk.CTkLabel(log_hdr, text="Log", font=self._font_card_title).pack(side="left")
+        self._ghost_button(log_hdr, "Clear log", self._clear_log).pack(side="right")
+
+        self._log = ctk.CTkTextbox(
+            parent,
+            corner_radius=10,
+            fg_color=_LOG_BG,
+            text_color=_LOG_FG,
+            font=self._font_mono,
+            wrap="word",
+            state="disabled",
+        )
+        self._log.pack(fill="both", expand=True, pady=(6, 4))
+        self._log.tag_config("error", foreground="#f48771")
+        self._log.tag_config("success", foreground="#89d185")
+        self._log.tag_config("info", foreground="#569cd6")
+        self._log.tag_config("warn", foreground="#dcdcaa")
+        self._log.tag_config("stats", foreground="#c586c0")
+        self._log.tag_config("dim", foreground="#808080")
 
     def _set_busy(self, busy: bool) -> None:
-        """Show or hide the animated activity bar next to the buttons."""
+        """Show/hide the progress row; starts in indeterminate (pulsing) mode."""
         if busy:
-            self._progress.pack(side=tk.LEFT, padx=(14, 0))
-            self._progress.start(12)
+            self._result_card.pack_forget()
+            self._progress_determinate = False
+            self._progress.configure(mode="indeterminate")
+            self._lbl_progress.configure(text="")
+            self._progress_row.pack(fill="x", pady=(2, 2), after=self._btn_stop.master)
+            self._progress.start()
         else:
             self._progress.stop()
-            self._progress.pack_forget()
+            self._progress_row.pack_forget()
+
+    # ── Progress tracking ────────────────────────────────────────────────────
+
+    def _reset_progress(self) -> None:
+        self._prog = {
+            "total": 0,
+            "processed": 0,
+            "enrolled": 0,
+            "already": 0,
+            "skipped": 0,
+            "expired": 0,
+            "stats_enrolled": None,
+            "savings": None,
+        }
+
+    def _parse_progress(self, line: str) -> None:
+        """Update counters from a fresh enroller log line."""
+        p = self._prog
+        if "Total courses this time:" in line:
+            try:
+                p["total"] += int(line.rsplit(":", 1)[1].strip())
+            except ValueError:
+                pass
+            return
+        for marker, key in _PROGRESS_MARKERS:
+            if marker in line:
+                p[key] += 1
+                p["processed"] += 1
+                return
+        self._parse_stats(line)
+
+    def _parse_stats(self, line: str) -> None:
+        """Capture totals from the final Run Statistics table."""
+        match = re.search(r"Enrolled:\s{2,}(\d+)", line)
+        if match:
+            self._prog["stats_enrolled"] = int(match.group(1))
+            return
+        match = re.search(r"Savings:\s{2,}(\S+)", line)
+        if match:
+            self._prog["savings"] = match.group(1)
+
+    def _update_progress_ui(self) -> None:
+        p = self._prog
+        if not p["total"]:
+            return
+        if not self._progress_determinate:
+            self._progress_determinate = True
+            self._progress.stop()
+            self._progress.configure(mode="determinate")
+        self._progress.set(min(1.0, p["processed"] / p["total"]))
+        skipped = p["already"] + p["skipped"] + p["expired"]
+        self._lbl_progress.configure(
+            text=(
+                f"Course {p['processed']} / {p['total']}   ·   "
+                f"Enrolled {p['enrolled']}   ·   Skipped {skipped}"
+            )
+        )
+
+    def _show_result_card(self) -> None:
+        p = self._prog
+        enrolled = (
+            p["stats_enrolled"] if p["stats_enrolled"] is not None else p["enrolled"]
+        )
+        if p["total"] == 0 and enrolled == 0:
+            return
+        text = f"✓  Enrolled in {enrolled} new course{'s' if enrolled != 1 else ''}"
+        if p["savings"]:
+            text += f"  —  saved {p['savings']}"
+        self._lbl_result.configure(text=text)
+        self._result_card.pack(fill="x", pady=(0, 8), before=self._log)
 
     # ── Status ───────────────────────────────────────────────────────────────
 
     def _refresh_status(self) -> None:
         """Re-check whether settings.yaml and the cookie file are present."""
         if _settings_exist():
-            self._dot_settings.configure(fg="#43a047")
+            self._dot_settings.configure(text_color="#43a047")
             self._lbl_settings.configure(text="Settings saved")
         else:
-            self._dot_settings.configure(fg="#9e9e9e")
+            self._dot_settings.configure(text_color="gray")
             self._lbl_settings.configure(
                 text="Settings: none yet — saved automatically on your first run"
             )
 
         if _cookie_valid():
-            self._dot_cookie.configure(fg="#43a047")
+            self._dot_cookie.configure(text_color="#43a047")
             self._lbl_cookie.configure(text="Logged in — ready to enroll")
             self._btn_login_now.pack_forget()
         else:
-            self._dot_cookie.configure(fg="#e53935")
+            self._dot_cookie.configure(text_color="#e53935")
             self._lbl_cookie.configure(text="Not logged in yet")
-            self._btn_login_now.pack(side=tk.RIGHT)
+            self._btn_login_now.pack(side="right")
+
+    # ── Preferences ──────────────────────────────────────────────────────────
+
+    def _current_prefs(self) -> Dict:
+        try:
+            pages = int(self._var_pages.get())
+        except tk.TclError:
+            pages = 5
+        return {
+            "appearance": self._var_appearance.get(),
+            "browser": self._var_browser_label.get(),
+            "scrapers": {
+                "discudemy": bool(self._var_discudemy.get()),
+                "idownloadcoupon": bool(self._var_idc.get()),
+                "freebiesglobal": bool(self._var_fbg.get()),
+                "tutorialbar": bool(self._var_tutbar.get()),
+                "coursevania": bool(self._var_cvania.get()),
+            },
+            "max_pages": pages,
+            "debug": bool(self._var_debug.get()),
+        }
+
+    def _persist_prefs(self, *_) -> None:
+        _save_prefs(self._current_prefs())
+
+    def _apply_prefs(self, prefs: Dict) -> None:
+        """Restore remembered choices; unknown/missing values keep defaults."""
+        if not prefs:
+            return
+        self._var_appearance.set(prefs.get("appearance", "Dark"))
+        browser = prefs.get("browser")
+        if browser in [label for label, _ in BROWSER_OPTIONS]:
+            self._var_browser_label.set(browser)
+        scrapers = prefs.get("scrapers") or {}
+        for key, var in (
+            ("discudemy", self._var_discudemy),
+            ("idownloadcoupon", self._var_idc),
+            ("freebiesglobal", self._var_fbg),
+            ("tutorialbar", self._var_tutbar),
+            ("coursevania", self._var_cvania),
+        ):
+            if key in scrapers:
+                var.set(bool(scrapers[key]))
+        pages = prefs.get("max_pages")
+        if isinstance(pages, int) and 1 <= pages <= 20:
+            self._var_pages.set(pages)
+            self._slider_pages.set(pages)
+            self._lbl_pages.configure(text=str(pages))
+        self._var_debug.set(bool(prefs.get("debug", False)))
+
+    def _on_close(self) -> None:
+        self._persist_prefs()
+        self._stop_event.set()
+        self.destroy()
+
+    # ── Update checker ───────────────────────────────────────────────────────
+
+    def _check_updates(self) -> None:
+        """Quietly look for a newer GitHub release; show a button if found."""
+        try:
+            import requests
+
+            resp = requests.get(LATEST_API, timeout=5)
+            tag = resp.json().get("tag_name", "")
+            if self._is_newer(tag, APP_VERSION):
+                self.after(0, lambda: self._btn_update.pack(side="right", padx=(0, 10)))
+        except Exception:
+            pass
+
+    @staticmethod
+    def _is_newer(remote: str, local: str) -> bool:
+        def parse(version: str) -> Tuple[int, ...]:
+            parts = re.findall(r"\d+", version)[:3]
+            return tuple(int(p) for p in parts) if parts else (0,)
+
+        return parse(remote) > parse(local)
 
     # ── Browser selection ────────────────────────────────────────────────────
 
@@ -840,9 +1006,9 @@ class App(tk.Tk):
 
         self._bridging = True
         self._stop_event.clear()
-        self._btn_bridge.configure(state=tk.DISABLED)
-        self._btn_start.configure(state=tk.DISABLED)
-        self._btn_stop.configure(state=tk.NORMAL)
+        self._btn_bridge.configure(state="disabled")
+        self._btn_start.configure(state="disabled")
+        self._btn_stop.configure(state="normal")
         self._set_busy(True)
         threading.Thread(target=self._run_bridge, args=(browser,), daemon=True).start()
 
@@ -923,9 +1089,9 @@ class App(tk.Tk):
 
     def _bridge_finished(self) -> None:
         self._bridging = False
-        self._btn_bridge.configure(state=tk.NORMAL)
-        self._btn_start.configure(state=tk.NORMAL)
-        self._btn_stop.configure(state=tk.DISABLED)
+        self._btn_bridge.configure(state="normal")
+        self._btn_start.configure(state="normal")
+        self._btn_stop.configure(state="disabled")
         self._set_busy(False)
         self._refresh_status()
 
@@ -969,13 +1135,15 @@ class App(tk.Tk):
             self._save_filter_settings()
         except Exception as exc:
             self._log_write(f"Warning: could not save filter settings: {exc}\n", "warn")
+        self._persist_prefs()
         self._update_run_summary()
+        self._reset_progress()
 
         flags = self._build_flags()
         cmd = _find_enroller_cmd(flags)
         self._log_write(f"$ {' '.join(cmd)}\n\n", "dim")
-        self._btn_start.configure(state=tk.DISABLED)
-        self._btn_stop.configure(state=tk.NORMAL)
+        self._btn_start.configure(state="disabled")
+        self._btn_stop.configure(state="normal")
         self._set_busy(True)
         self._stop_event.clear()
 
@@ -1051,14 +1219,18 @@ class App(tk.Tk):
         except OSError:
             return offset
         for line in new_text.splitlines(keepends=True):
+            self._parse_progress(line)
             self._append_log(line)
+        if new_text:
+            self.after(0, self._update_progress_ui)
         return offset
 
     def _enrollment_finished(self) -> None:
-        self._btn_start.configure(state=tk.NORMAL)
-        self._btn_stop.configure(state=tk.DISABLED)
+        self._btn_start.configure(state="normal")
+        self._btn_stop.configure(state="disabled")
         self._set_busy(False)
         self._refresh_status()
+        self._show_result_card()
         self._log_write("\n─── Run complete ───\n", "stats")
 
     def _stop_enrollment(self) -> None:
@@ -1094,18 +1266,18 @@ class App(tk.Tk):
         self.after(0, lambda: self._log_write(line, resolved_tag))
 
     def _log_write(self, text: str, tag: Optional[str] = None) -> None:
-        self._log.configure(state=tk.NORMAL)
+        self._log.configure(state="normal")
         if tag:
-            self._log.insert(tk.END, text, tag)
+            self._log.insert("end", text, tag)
         else:
-            self._log.insert(tk.END, text)
-        self._log.configure(state=tk.DISABLED)
-        self._log.see(tk.END)
+            self._log.insert("end", text)
+        self._log.configure(state="disabled")
+        self._log.see("end")
 
     def _clear_log(self) -> None:
-        self._log.configure(state=tk.NORMAL)
-        self._log.delete("1.0", tk.END)
-        self._log.configure(state=tk.DISABLED)
+        self._log.configure(state="normal")
+        self._log.delete("1.0", "end")
+        self._log.configure(state="disabled")
 
 
 def main() -> None:

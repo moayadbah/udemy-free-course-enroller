@@ -104,10 +104,12 @@ pip install .
 
 ## GUI
 
-`gui.py` provides a desktop interface built on Python's built-in `tkinter` — no
-extra packages required.
+`gui.py` provides a modern desktop interface (built on
+[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) — dark/light mode,
+rounded design).
 
 ```
+pip install customtkinter
 python3 gui.py
 ```
 
@@ -119,17 +121,21 @@ It has two tabs:
 |---|---|
 | **Getting Started** | A short 3-step walkthrough for first-time users |
 | **Login Browser** | Dropdown to pick the browser used by Bridge Cookies: Brave / Chrome / Edge / Chromium |
-| **Scrapers** | Checkboxes to enable/disable each coupon site; max pages spinbox; debug toggle |
-| **Course Filters** | Language and category fields — saved to settings.yaml before each run |
-| **Setup Status** | Readiness check: turns green once you're logged in; tells you how to fix it if not |
+| **Scrapers** | Toggles for each coupon site; max-pages slider; debug switch |
+| **Course Filters** | Pick languages and categories from checkboxes (plus an "Other" field) — saved to settings.yaml before each run |
+| **Setup Status** | Readiness check: turns green once you're logged in, with a one-click "Log in now" button |
 
 **Run tab**
 
 | Control | What it does |
 |---|---|
 | **Bridge Cookies** | Opens the selected browser in-app; once you log in, it detects it automatically and saves your session (label updates to match your choice) |
-| **Start / Stop** | Runs the enroller (REST mode) and streams the log into the app |
+| **Start / Stop** | Runs the enroller (REST mode) with a live progress bar ("Course 12 / 43 · Enrolled 8 · Skipped 3") and an end-of-run savings summary |
 | **Log** | Colour-coded: green = enrolled, red = error, yellow = already claimed / expired |
+
+The app remembers your browser, scraper, filter, and appearance choices between
+launches, and checks GitHub for newer releases on startup (System/Light/Dark theme
+switch is in the top-right corner).
 
 ---
 

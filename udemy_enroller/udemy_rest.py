@@ -1,6 +1,8 @@
 """Udemy REST."""
+
 import json
 import os
+import random
 import re
 import time
 from dataclasses import dataclass, field
@@ -17,6 +19,20 @@ from udemy_enroller.settings import Settings
 from udemy_enroller.utils import get_app_dir
 
 logger = get_logger()
+
+# Shared session for course-page lookups: keep-alive + cookies make the
+# traffic look like one browsing user instead of a burst of cold requests,
+# which trips Udemy's rate limiter far less often.
+_course_page_session = requests.Session()
+_course_page_session.headers.update(
+    {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/149.0.0.0 Safari/537.36"
+        )
+    }
+)
 
 
 def format_requests(func):
@@ -139,7 +155,9 @@ class UdemyActions:
 
         # Discard cached cookies that are missing access_token (e.g. from a prior OTP-blocked login)
         if cookie_details is not None and "access_token" not in cookie_details:
-            logger.info("Cached cookies are missing access_token, clearing and re-logging in")
+            logger.info(
+                "Cached cookies are missing access_token, clearing and re-logging in"
+            )
             self._delete_cookies()
             cookie_details = None
 
@@ -203,7 +221,9 @@ class UdemyActions:
                         "Udemy requires email OTP verification. "
                         "Check your email for a 6-digit code."
                     )
-                    otp_code = input("Enter the 6-digit OTP code sent to your email: ").strip()
+                    otp_code = input(
+                        "Enter the 6-digit OTP code sent to your email: "
+                    ).strip()
 
                     otp_response = self.udemy_scraper.post(
                         two_factor_url,
@@ -350,7 +370,7 @@ class UdemyActions:
             "amount"
         ]
         if bool(current_price):
-            logger.debug(
+            logger.info(
                 f"Skipping course '{course_identifier}' as it now costs {self._currency_symbol}{current_price}"
             )
             coupon_valid = False
@@ -359,7 +379,7 @@ class UdemyActions:
                 "amount"
             ]
         ):
-            logger.debug(f"Skipping course '{course_identifier}' as it is always FREE")
+            logger.info(f"Skipping course '{course_identifier}' as it is always FREE")
             coupon_valid = False
 
         if coupon_valid:
@@ -383,7 +403,7 @@ class UdemyActions:
         course_language = course_details["locale"]["simple_english_title"]
         wanted_languages = [lang.lower() for lang in self.settings.languages]
         if course_language.lower() not in wanted_languages:
-            logger.debug(
+            logger.info(
                 f"Course '{course_identifier}' language not wanted: {course_language}"
             )
             is_preferred_language = False
@@ -406,7 +426,7 @@ class UdemyActions:
         category = course_details["primary_category"]["title"].lower()
         subcategory = course_details["primary_subcategory"]["title"].lower()
         if category not in wanted_categories and subcategory not in wanted_categories:
-            logger.debug(
+            logger.info(
                 f"Skipping course '{course_identifier}' as it does not have a wanted category"
             )
             is_preferred_category = False
@@ -497,24 +517,18 @@ class UdemyActions:
         :param str url: Udemy url to fetch the course from
         :return: int representing the course id
         """
-        # A browser-like User-Agent avoids being served a stripped-down/bot page
-        browser_headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/149.0.0.0 Safari/537.36"
-            )
-        }
-        # Udemy rate-limits rapid course-page requests with HTTP 403. Back off
-        # and retry a few times (a single request succeeds; bursts get throttled).
-        response = requests.get(url, headers=browser_headers)
-        for attempt in range(3):
+        # Udemy rate-limits bursts of course-page requests with HTTP 403.
+        # Pace each fetch with a small jittered delay, and on a 403 back off
+        # hard before retrying (a single request succeeds; bursts get cut off).
+        time.sleep(random.uniform(1.0, 2.0))
+        response = _course_page_session.get(url)
+        for attempt in range(4):
             if response.status_code != 403:
                 break
-            wait = 3 * (attempt + 1)
-            logger.debug(f"Rate-limited (403) on {url}; retrying in {wait}s")
+            wait = 5 * (2**attempt)
+            logger.info(f"Rate-limited by Udemy (403); waiting {wait}s and retrying")
             time.sleep(wait)
-            response = requests.get(url, headers=browser_headers)
+            response = _course_page_session.get(url)
         response.raise_for_status()
         html = response.text
 

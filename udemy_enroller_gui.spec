@@ -26,6 +26,7 @@ for pkg in (
     "bs4",
     "price_parser",
     "certifi",
+    "customtkinter",
 ):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas
