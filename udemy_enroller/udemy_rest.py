@@ -505,7 +505,10 @@ class UdemyActions:
                 self.stats.expired += 1
                 return UdemyStatus.EXPIRED.value
 
-            return self._checkout(course_id, coupon_code, course_identifier)
+            status = self._checkout(course_id, coupon_code, course_identifier)
+            if status == UdemyStatus.ENROLLED.value:
+                logger.info(f"Course link: {url}")
+            return status
         else:
             logger.debug(f"Malformed url passed in: {course_link}")
             return UdemyStatus.EXPIRED.value

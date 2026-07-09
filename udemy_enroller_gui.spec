@@ -12,9 +12,17 @@ import sys
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-datas = []
+datas = [("web/index.html", "web")]
 binaries = []
 hiddenimports = []
+
+# pywebview loads its platform backend dynamically.
+if sys.platform == "darwin":
+    hiddenimports += ["webview.platforms.cocoa"]
+elif sys.platform == "win32":
+    hiddenimports += ["webview.platforms.winforms", "webview.platforms.edgechromium"]
+else:
+    hiddenimports += ["webview.platforms.gtk", "webview.platforms.qt"]
 
 # Packages that ship data files or use dynamic imports PyInstaller can miss.
 for pkg in (
@@ -26,7 +34,7 @@ for pkg in (
     "bs4",
     "price_parser",
     "certifi",
-    "customtkinter",
+    "webview",
 ):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas

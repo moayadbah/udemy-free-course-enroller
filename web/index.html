@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Udemy Course Enroller</title>
+<style>
+/* ─── Design tokens ─────────────────────────────────────────────────────── */
+:root{
+  --bg:#0a0d13; --bg-grad:radial-gradient(1200px 700px at 80% -10%,rgba(124,58,237,.14),transparent 60%),
+                          radial-gradient(900px 600px at -10% 110%,rgba(59,130,246,.10),transparent 55%);
+  --panel:rgba(255,255,255,.045); --panel-solid:#12161f; --border:rgba(255,255,255,.08);
+  --text:#e8eaf0; --muted:#8b93a5; --faint:#5b6373;
+  --accent1:#7c3aed; --accent2:#3b82f6;
+  --accent-grad:linear-gradient(135deg,#7c3aed 0%,#3b82f6 100%);
+  --ok:#22c55e; --ok-bg:rgba(34,197,94,.12); --warn:#eab308; --danger:#ef4444; --danger-bg:rgba(239,68,68,.12);
+  --chip:rgba(255,255,255,.06); --chip-border:rgba(255,255,255,.12);
+  --log-bg:#0b0f14; --shadow:0 10px 30px rgba(0,0,0,.35);
+  --sidebar:#0d111a;
+}
+html[data-theme="light"]{
+  --bg:#f3f5f9; --bg-grad:radial-gradient(1200px 700px at 80% -10%,rgba(124,58,237,.08),transparent 60%),
+                          radial-gradient(900px 600px at -10% 110%,rgba(59,130,246,.07),transparent 55%);
+  --panel:#ffffff; --panel-solid:#ffffff; --border:rgba(15,23,42,.10);
+  --text:#0f172a; --muted:#5b6474; --faint:#94a0b4;
+  --chip:rgba(15,23,42,.04); --chip-border:rgba(15,23,42,.14);
+  --log-bg:#0b0f14; --shadow:0 10px 30px rgba(15,23,42,.08);
+  --sidebar:#e9edf4;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Display","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;overflow:hidden;user-select:none;
+}
+body::before{content:"";position:fixed;inset:0;background:var(--bg-grad);pointer-events:none;z-index:0}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:rgba(140,150,170,.25);border-radius:9px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(140,150,170,.45);border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-track{background:transparent}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+input,select{font:inherit;color:var(--text)}
+a{color:var(--accent2)}
+
+/* ─── Layout ────────────────────────────────────────────────────────────── */
+#shell{display:flex;height:100vh;position:relative;z-index:1}
+#sidebar{width:82px;background:var(--sidebar);border-inline-end:1px solid var(--border);
+  display:flex;flex-direction:column;align-items:center;padding:18px 0 14px;gap:6px;flex-shrink:0}
+#logo{width:40px;height:40px;border-radius:12px;background:var(--accent-grad);display:grid;place-items:center;
+  color:#fff;font-weight:800;font-size:17px;margin-bottom:16px;box-shadow:0 6px 18px rgba(124,58,237,.4)}
+.nav-btn{width:64px;padding:9px 0 7px;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  color:var(--muted);transition:all .18s ease}
+.nav-btn svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.nav-btn span{font-size:10px;font-weight:600}
+.nav-btn:hover{color:var(--text);background:var(--panel)}
+.nav-btn.active{color:#fff;background:var(--accent-grad);box-shadow:0 6px 16px rgba(99,102,241,.35)}
+html[data-theme="light"] .nav-btn.active{color:#fff}
+#main{flex:1;overflow-y:auto;overflow-x:hidden;scroll-behavior:smooth}
+.page{display:none;padding:30px 34px 40px;max-width:980px;margin:0 auto;animation:fadeIn .22s ease}
+.page.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+h1{font-size:22px;font-weight:750;letter-spacing:-.02em;margin-bottom:4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:22px}
+
+/* ─── Components ────────────────────────────────────────────────────────── */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px 22px;
+  margin-bottom:16px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.card h2{font-size:14px;font-weight:700;margin-bottom:4px}
+.card .hint{color:var(--muted);font-size:12px}
+.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.spread{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 13px;border-radius:99px;font-size:12.5px;font-weight:600}
+.pill .dot{width:8px;height:8px;border-radius:50%}
+.pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.ok .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.pill.bad{background:var(--danger-bg);color:var(--danger)} .pill.bad .dot{background:var(--danger)}
+.btn{padding:9px 18px;border-radius:11px;font-weight:650;font-size:13.5px;transition:all .16s ease;
+  border:1px solid var(--border);background:var(--panel)}
+.btn:hover{border-color:var(--chip-border);transform:translateY(-1px)}
+.btn:active{transform:none}
+.btn:disabled{opacity:.45;cursor:default;transform:none}
+.btn.primary{background:var(--accent-grad);color:#fff;border:0;box-shadow:0 8px 22px rgba(99,102,241,.35)}
+.btn.primary:hover{box-shadow:0 10px 26px rgba(99,102,241,.5);filter:brightness(1.07)}
+.btn.big{padding:14px 34px;font-size:15.5px;border-radius:14px}
+.btn.danger{background:var(--danger-bg);color:var(--danger);border-color:transparent}
+.btn.ghost{background:transparent}
+.chip{padding:7px 15px;border-radius:99px;border:1px solid var(--chip-border);background:var(--chip);
+  font-size:12.5px;font-weight:550;transition:all .15s ease;color:var(--muted)}
+.chip:hover{color:var(--text);border-color:var(--faint)}
+.chip.on{background:var(--accent-grad);color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(99,102,241,.3)}
+.chip .x{margin-inline-start:6px;opacity:.8}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.field{background:var(--chip);border:1px solid var(--chip-border);border-radius:10px;padding:8px 12px;outline:none;
+  min-width:200px;transition:border-color .15s}
+.field:focus{border-color:var(--accent2)}
+select.field{appearance:none;-webkit-appearance:none;padding-inline-end:28px;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%238b93a5' stroke-width='1.6' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 10px center}
+html[dir="rtl"] select.field{background-position:left 10px center;padding-inline-end:12px;padding-inline-start:28px}
+.switch{position:relative;width:40px;height:23px;border-radius:99px;background:var(--chip);border:1px solid var(--chip-border);
+  transition:all .18s ease;flex-shrink:0}
+.switch::after{content:"";position:absolute;top:2px;inset-inline-start:2px;width:17px;height:17px;border-radius:50%;
+  background:var(--muted);transition:all .18s ease}
+.switch.on{background:var(--accent-grad);border-color:transparent}
+.switch.on::after{inset-inline-start:18px;background:#fff}
+.seg{display:inline-flex;background:var(--chip);border:1px solid var(--chip-border);border-radius:11px;padding:3px;gap:2px}
+.seg button{padding:5px 14px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.seg button.on{background:var(--accent-grad);color:#fff}
+.divider{height:1px;background:var(--border);margin:16px 0}
+
+/* ─── Home ──────────────────────────────────────────────────────────────── */
+#hero{padding:26px}
+#hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+#big-actions{display:flex;gap:12px;align-items:center;margin-top:22px}
+#progress-wrap{margin-top:22px;display:none}
+#progress-wrap.show{display:block}
+.bar{height:8px;border-radius:99px;background:var(--chip);overflow:hidden;position:relative}
+.bar>i{display:block;height:100%;border-radius:99px;background:var(--accent-grad);width:0%;transition:width .5s ease}
+.bar.indet>i{width:34%!important;animation:slide 1.15s ease-in-out infinite}
+@keyframes slide{0%{margin-inline-start:-34%}100%{margin-inline-start:100%}}
+#progress-meta{display:flex;justify-content:space-between;color:var(--muted);font-size:12.5px;margin-top:8px;flex-wrap:wrap;gap:6px}
+#result{display:none;border:1px solid rgba(34,197,94,.35);background:var(--ok-bg);border-radius:16px;
+  padding:16px 20px;margin-bottom:16px;font-weight:650}
+#result.show{display:flex;align-items:center;gap:10px;animation:fadeIn .3s ease}
+#courses{display:none}
+#courses.show{display:block}
+.course{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--border)}
+.course:last-child{border-bottom:0}
+.course .t{font-size:13px;font-weight:550;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.course .open{color:var(--accent2);font-size:12.5px;font-weight:650;white-space:nowrap}
+.course .open:hover{text-decoration:underline}
+#stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}
+.stat{background:var(--chip);border:1px solid var(--border);border-radius:13px;padding:12px 14px;text-align:center}
+.stat b{display:block;font-size:20px;font-weight:750;letter-spacing:-.02em}
+.stat span{font-size:11px;color:var(--muted);font-weight:600}
+
+/* ─── Activity ──────────────────────────────────────────────────────────── */
+#log{background:var(--log-bg);border:1px solid var(--border);border-radius:14px;padding:14px 16px;
+  height:calc(100vh - 200px);overflow-y:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12px;line-height:1.65;color:#c8ccd4;white-space:pre-wrap;word-break:break-word;user-select:text;direction:ltr;text-align:left}
+.lg-error{color:#f47067}.lg-success{color:#7ee787}.lg-info{color:#79b8ff}.lg-warn{color:#e3c26b}.lg-stats{color:#d2a8ff}.lg-dim{color:#6e7681}
+
+/* ─── Settings ──────────────────────────────────────────────────────────── */
+.set-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:11px 0}
+.set-row+.set-row{border-top:1px solid var(--border)}
+.set-row .lab b{display:block;font-size:13px;font-weight:650}
+.set-row .lab span{font-size:12px;color:var(--muted)}
+#update-banner{display:none;align-items:center;justify-content:space-between;gap:12px;background:var(--ok-bg);
+  border:1px solid rgba(34,197,94,.3);border-radius:13px;padding:11px 16px;margin-bottom:16px}
+#update-banner.show{display:flex}
+
+/* ─── Onboarding / modal ────────────────────────────────────────────────── */
+#overlay{position:fixed;inset:0;background:rgba(4,6,10,.68);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  display:none;align-items:center;justify-content:center;z-index:50}
+#overlay.show{display:flex}
+#modal{width:min(480px,90vw);background:var(--panel-solid);border:1px solid var(--border);border-radius:20px;
+  padding:30px 32px;box-shadow:var(--shadow);animation:pop .25s ease}
+@keyframes pop{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:none}}
+#modal .steps{display:flex;gap:6px;margin-bottom:20px}
+#modal .steps i{height:4px;flex:1;border-radius:99px;background:var(--chip)}
+#modal .steps i.on{background:var(--accent-grad)}
+#modal h3{font-size:19px;font-weight:750;margin-bottom:8px;letter-spacing:-.01em}
+#modal p{color:var(--muted);font-size:13.5px;margin-bottom:20px}
+#modal .foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.spinner{width:17px;height:17px;border:2.5px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;
+  animation:spin .7s linear infinite;display:inline-block;vertical-align:-3px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ─── Toast ─────────────────────────────────────────────────────────────── */
+#toast{position:fixed;bottom:22px;inset-inline-end:24px;background:var(--panel-solid);border:1px solid var(--border);
+  border-radius:12px;padding:10px 18px;font-size:13px;font-weight:600;box-shadow:var(--shadow);
+  opacity:0;transform:translateY(10px);transition:all .25s ease;z-index:60;pointer-events:none}
+#toast.show{opacity:1;transform:none}
+
+html[dir="rtl"] body{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Tahoma,Arial,sans-serif}
+</style>
+</head>
+<body>
+<div id="shell">
+  <nav id="sidebar">
+    <div id="logo">U</div>
+    <button class="nav-btn active" data-page="home">
+      <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+      <span data-i18n="nav.home"></span></button>
+    <button class="nav-btn" data-page="filters">
+      <svg viewBox="0 0 24 24"><path d="M4 5h16M7 12h10M10 19h4"/></svg>
+      <span data-i18n="nav.filters"></span></button>
+    <button class="nav-btn" data-page="activity">
+      <svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+      <span data-i18n="nav.activity"></span></button>
+    <button class="nav-btn" data-page="settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.76l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.76-.32 1.6 1.6 0 0 0-.97 1.47V21a2 2 0 1 1-4 0v-.09a1.6 1.6 0 0 0-1.05-1.47 1.6 1.6 0 0 0-1.76.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.6 1.6 0 0 0 4.6 15a1.6 1.6 0 0 0-1.47-.97H3a2 2 0 1 1 0-4h.09A1.6 1.6 0 0 0 4.56 9a1.6 1.6 0 0 0-.32-1.76l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.6 1.6 0 0 0 1.76.32H9a1.6 1.6 0 0 0 .97-1.47V3a2 2 0 1 1 4 0v.09c0 .64.38 1.22.97 1.47.59.25 1.27.12 1.76-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.6 1.6 0 0 0-.32 1.76V9c.25.59.83.97 1.47.97H21a2 2 0 1 1 0 4h-.09a1.6 1.6 0 0 0-1.47.97z"/></svg>
+      <span data-i18n="nav.settings"></span></button>
+  </nav>
+
+  <div id="main">
+    <!-- HOME -->
+    <section class="page active" id="page-home">
+      <div id="update-banner">
+        <span data-i18n="update.available"></span>
+        <button class="btn" onclick="api('open_url',{url:state.releases_url})" data-i18n="update.get"></button>
+      </div>
+      <div class="card" id="hero">
+        <div id="hero-top">
+          <div>
+            <h1 data-i18n="home.title"></h1>
+            <div class="sub" data-i18n="home.sub" style="margin-bottom:0"></div>
+          </div>
+          <div id="login-pill"></div>
+        </div>
+        <div id="big-actions">
+          <button class="btn primary big" id="btn-start" onclick="startRun()" data-i18n="home.start"></button>
+          <button class="btn danger" id="btn-stop" onclick="api('stop')" style="display:none" data-i18n="home.stop"></button>
+          <button class="btn" id="btn-login" onclick="startLogin()" style="display:none"></button>
+        </div>
+        <div id="progress-wrap">
+          <div class="bar indet" id="bar"><i id="bar-fill"></i></div>
+          <div id="progress-meta">
+            <span id="p-count"></span><span id="p-detail"></span>
+          </div>
+        </div>
+        <div id="stat-grid" style="display:none">
+          <div class="stat"><b id="s-enrolled">0</b><span data-i18n="home.enrolled"></span></div>
+          <div class="stat"><b id="s-skipped">0</b><span data-i18n="home.skipped"></span></div>
+          <div class="stat"><b id="s-already">0</b><span data-i18n="home.already"></span></div>
+          <div class="stat"><b id="s-total">0</b><span data-i18n="home.found"></span></div>
+        </div>
+      </div>
+      <div id="result"><span>🎉</span><span id="result-text"></span></div>
+      <div class="card" id="courses">
+        <h2 data-i18n="home.courses"></h2>
+        <div id="course-list"></div>
+      </div>
+    </section>
+
+    <!-- FILTERS -->
+    <section class="page" id="page-filters">
+      <h1 data-i18n="filters.title"></h1>
+      <div class="sub" data-i18n="filters.sub"></div>
+      <div class="card">
+        <div class="spread"><h2 data-i18n="filters.languages"></h2>
+          <button class="btn ghost" style="font-size:12px" onclick="clearGroup('lang')" data-i18n="filters.clear"></button></div>
+        <div class="chips" id="chips-lang"></div>
+        <div class="row" style="margin-top:14px">
+          <input class="field" id="other-lang" data-i18n-ph="filters.otherPh">
+          <button class="btn" onclick="addOther('lang')" data-i18n="filters.add"></button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="spread"><h2 data-i18n="filters.categories"></h2>
+          <button class="btn ghost" style="font-size:12px" onclick="clearGroup('cat')" data-i18n="filters.clear"></button></div>
+        <div class="chips" id="chips-cat"></div>
+        <div class="row" style="margin-top:14px">
+          <input class="field" id="other-cat" data-i18n-ph="filters.otherPh">
+          <button class="btn" onclick="addOther('cat')" data-i18n="filters.add"></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section class="page" id="page-activity">
+      <div class="spread" style="margin-bottom:14px">
+        <div><h1 data-i18n="activity.title"></h1>
+        <div class="sub" style="margin-bottom:0" data-i18n="activity.sub"></div></div>
+        <button class="btn" onclick="document.getElementById('log').textContent=''" data-i18n="activity.clear"></button>
+      </div>
+      <div id="log"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="page" id="page-settings">
+      <h1 data-i18n="settings.title"></h1>
+      <div class="sub" data-i18n="settings.sub"></div>
+
+      <div class="card">
+        <h2 data-i18n="settings.general"></h2>
+        <div class="set-row">
+          <div class="lab"><b data-i18n="settings.language"></b><span data-i18n="settings.languageHint"></span></div>
+          <div class="seg" id="seg-lang">
+            <button data-val="en" onclick="setLang('en')">English</button>
+            <button data-val="ar" onclick="setLang('ar')">العربية</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="lab"><b data-i18n="settings.theme"></b><span data-i18n="settings.themeHint"></span></div>
+          <div class="seg" id="seg-theme">
+            <button data-val="dark" onclick="setTheme('dark')" data-i18n="theme.dark"></button>
+            <button data-val="light" onclick="setTheme('light')" data-i18n="theme.light"></button>
+            <button data-val="system" onclick="setTheme('system')" data-i18n="theme.system"></button>
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="lab"><b data-i18n="settings.browser"></b><span data-i18n="settings.browserHint"></span></div>
+          <select class="field" id="sel-browser" onchange="prefs.browser=this.value;savePrefs()"></select>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 data-i18n="settings.autorun"></h2>
+        <div class="set-row">
+          <div class="lab"><b data-i18n="settings.autorunOn"></b><span data-i18n="settings.autorunHint"></span></div>
+          <div class="switch" id="sw-autorun" onclick="toggleAutorun()"></div>
+        </div>
+        <div class="set-row" id="row-autorun-int">
+          <div class="lab"><b data-i18n="settings.autorunEvery"></b></div>
+          <select class="field" id="sel-autorun" onchange="prefs.auto_run_hours=+this.value;savePrefs()">
+            <option value="3">3</option><option value="6">6</option>
+            <option value="12">12</option><option value="24">24</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 data-i18n="settings.advanced"></h2>
+        <div class="hint" data-i18n="settings.advancedHint" style="margin-bottom:6px"></div>
+        <div class="set-row">
+          <div class="lab"><b data-i18n="settings.scrapers"></b><span data-i18n="settings.scrapersHint"></span></div>
+        </div>
+        <div class="chips" id="chips-scrapers" style="margin-top:2px"></div>
+        <div class="set-row" style="margin-top:10px">
+          <div class="lab"><b data-i18n="settings.maxPages"></b><span data-i18n="settings.maxPagesHint"></span></div>
+          <select class="field" id="sel-pages" onchange="prefs.max_pages=+this.value;savePrefs()">
+            <option>1</option><option>2</option><option>3</option><option>5</option>
+            <option>10</option><option>15</option><option>20</option>
+          </select>
+        </div>
+        <div class="set-row">
+          <div class="lab"><b data-i18n="settings.debug"></b><span data-i18n="settings.debugHint"></span></div>
+          <div class="switch" id="sw-debug" onclick="prefs.debug=!prefs.debug;savePrefs();renderSettings()"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="set-row" style="padding-top:0">
+          <div class="lab"><b data-i18n="settings.version"></b><span id="ver"></span></div>
+          <button class="btn ghost" onclick="api('open_url',{url:state.repo_url})" data-i18n="settings.github"></button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- Onboarding -->
+<div id="overlay">
+  <div id="modal">
+    <div class="steps"><i id="st1" class="on"></i><i id="st2"></i><i id="st3"></i></div>
+    <div id="ob-1">
+      <h3 data-i18n="ob.welcome"></h3>
+      <p data-i18n="ob.welcomeText"></p>
+      <div class="seg" style="margin-bottom:18px">
+        <button data-val="en" class="on" onclick="setLang('en');markSeg(this)">English</button>
+        <button data-val="ar" onclick="setLang('ar');markSeg(this)">العربية</button>
+      </div>
+      <div class="foot"><button class="btn ghost" onclick="closeOb()" data-i18n="ob.skip"></button>
+        <button class="btn primary" onclick="obStep(2)" data-i18n="ob.next"></button></div>
+    </div>
+    <div id="ob-2" style="display:none">
+      <h3 data-i18n="ob.login"></h3>
+      <p data-i18n="ob.loginText"></p>
+      <div class="row" style="margin-bottom:16px">
+        <select class="field" id="ob-browser" onchange="prefs.browser=this.value;savePrefs()"></select>
+        <button class="btn primary" id="ob-login-btn" onclick="startLogin()" data-i18n="ob.openBrowser"></button>
+      </div>
+      <div class="foot"><button class="btn ghost" onclick="closeOb()" data-i18n="ob.skip"></button>
+        <span id="ob-wait" style="display:none;color:var(--muted);font-size:12.5px"><span class="spinner" style="border-color:rgba(128,128,128,.3);border-top-color:var(--accent2)"></span>&nbsp;<span data-i18n="ob.waiting"></span></span></div>
+    </div>
+    <div id="ob-3" style="display:none">
+      <h3 data-i18n="ob.done"></h3>
+      <p data-i18n="ob.doneText"></p>
+      <div class="foot"><span></span>
+        <button class="btn primary" onclick="closeOb()" data-i18n="ob.finish"></button></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ─── i18n ──────────────────────────────────────────────────────────────── */
+const I18N = {
+en:{
+  "nav.home":"Home","nav.filters":"Filters","nav.activity":"Activity","nav.settings":"Settings",
+  "home.title":"Udemy Course Enroller","home.sub":"Free courses, on autopilot",
+  "home.start":"Start Enrolling","home.stop":"Stop","home.loginCta":"Log in to Udemy",
+  "home.loggedIn":"Logged in","home.notLoggedIn":"Not logged in",
+  "home.enrolled":"Enrolled","home.skipped":"Skipped","home.already":"Owned already","home.found":"Coupons found",
+  "home.courses":"Enrolled this run","home.open":"Open course ↗",
+  "home.resultOne":"Enrolled in {n} new course","home.resultMany":"Enrolled in {n} new courses","home.saved":"— saved {s}",
+  "home.progressOf":"Course {a} of {b}","home.searching":"Searching coupon sites…",
+  "update.available":"A newer version is available","update.get":"Download",
+  "filters.title":"Course Filters","filters.sub":"Only enroll in what you actually want. Nothing selected = accept everything.",
+  "filters.languages":"Languages","filters.categories":"Categories","filters.clear":"Clear",
+  "filters.otherPh":"Add another…","filters.add":"Add","filters.saved":"Filters saved",
+  "activity.title":"Activity","activity.sub":"Live log of everything the enroller does","activity.clear":"Clear",
+  "settings.title":"Settings","settings.sub":"General options and advanced tuning",
+  "settings.general":"General","settings.language":"Interface language","settings.languageHint":"English or Arabic",
+  "settings.theme":"Appearance","settings.themeHint":"Dark, light, or follow the system",
+  "theme.dark":"Dark","theme.light":"Light","theme.system":"System",
+  "settings.browser":"Login browser","settings.browserHint":"Used only for the one-time Udemy login",
+  "settings.autorun":"Automatic runs","settings.autorunOn":"Run automatically",
+  "settings.autorunHint":"Enroll on a schedule while the app is open",
+  "settings.autorunEvery":"Run every (hours)",
+  "settings.advanced":"Advanced","settings.advancedHint":"Defaults work well — change only if you know why.",
+  "settings.scrapers":"Coupon sources","settings.scrapersHint":"Sites scanned for free-course coupons",
+  "settings.maxPages":"Max pages per source","settings.maxPagesHint":"More pages = more coupons, slower runs",
+  "settings.debug":"Debug logging","settings.debugHint":"Verbose log output for troubleshooting",
+  "settings.version":"Version","settings.github":"GitHub ↗",
+  "ob.welcome":"Welcome! 👋","ob.welcomeText":"This app finds 100%-off Udemy coupons and enrolls you automatically. Two quick steps and you're set.",
+  "ob.skip":"Skip for now","ob.next":"Next","ob.login":"Log in to Udemy",
+  "ob.loginText":"A browser will open. Sign in with your email, password, and the 6-digit code Udemy emails you. The app detects it automatically.",
+  "ob.openBrowser":"Open browser & log in","ob.waiting":"Waiting for you to finish logging in…",
+  "ob.done":"You're all set 🎉","ob.doneText":"Hit Start Enrolling whenever you like. Set filters to only get courses in your language.",
+  "ob.finish":"Start using the app",
+  "toast.loginOk":"Logged in successfully!","toast.loginFail":"Login didn't complete — try again",
+  "toast.needLogin":"Log in first — takes one minute","toast.saved":"Saved",
+  "notify.done":"Run complete"
+},
+ar:{
+  "nav.home":"الرئيسية","nav.filters":"الفلاتر","nav.activity":"النشاط","nav.settings":"الإعدادات",
+  "home.title":"مسجّل دورات يوديمي","home.sub":"دورات مجانية، تلقائيًا",
+  "home.start":"ابدأ التسجيل","home.stop":"إيقاف","home.loginCta":"تسجيل الدخول إلى يوديمي",
+  "home.loggedIn":"مسجّل الدخول","home.notLoggedIn":"غير مسجّل الدخول",
+  "home.enrolled":"تم التسجيل","home.skipped":"تم التخطي","home.already":"مسجّل مسبقًا","home.found":"كوبونات",
+  "home.courses":"دورات هذه الجولة","home.open":"افتح الدورة ↗",
+  "home.resultOne":"تم التسجيل في {n} دورة جديدة","home.resultMany":"تم التسجيل في {n} دورات جديدة","home.saved":"— وفّرت {s}",
+  "home.progressOf":"الدورة {a} من {b}","home.searching":"جارٍ البحث في مواقع الكوبونات…",
+  "update.available":"يتوفر إصدار أحدث","update.get":"تنزيل",
+  "filters.title":"فلاتر الدورات","filters.sub":"سجّل فقط فيما تريده فعلًا. لا شيء محدد = قبول الكل.",
+  "filters.languages":"اللغات","filters.categories":"التصنيفات","filters.clear":"مسح",
+  "filters.otherPh":"أضف غيرها…","filters.add":"إضافة","filters.saved":"تم حفظ الفلاتر",
+  "activity.title":"النشاط","activity.sub":"سجل مباشر لكل ما يقوم به التطبيق","activity.clear":"مسح",
+  "settings.title":"الإعدادات","settings.sub":"خيارات عامة وضبط متقدم",
+  "settings.general":"عام","settings.language":"لغة الواجهة","settings.languageHint":"الإنجليزية أو العربية",
+  "settings.theme":"المظهر","settings.themeHint":"داكن أو فاتح أو حسب النظام",
+  "theme.dark":"داكن","theme.light":"فاتح","theme.system":"النظام",
+  "settings.browser":"متصفح تسجيل الدخول","settings.browserHint":"يُستخدم فقط لتسجيل الدخول لمرة واحدة",
+  "settings.autorun":"التشغيل التلقائي","settings.autorunOn":"تشغيل تلقائي",
+  "settings.autorunHint":"التسجيل وفق جدول أثناء فتح التطبيق",
+  "settings.autorunEvery":"التكرار كل (ساعات)",
+  "settings.advanced":"متقدم","settings.advancedHint":"الإعدادات الافتراضية جيدة — غيّرها فقط إذا كنت تعرف السبب.",
+  "settings.scrapers":"مصادر الكوبونات","settings.scrapersHint":"المواقع التي تُفحص بحثًا عن كوبونات",
+  "settings.maxPages":"أقصى صفحات لكل مصدر","settings.maxPagesHint":"صفحات أكثر = كوبونات أكثر ووقت أطول",
+  "settings.debug":"سجل التصحيح","settings.debugHint":"إخراج مفصّل لاستكشاف الأخطاء",
+  "settings.version":"الإصدار","settings.github":"GitHub ↗",
+  "ob.welcome":"أهلًا بك! 👋","ob.welcomeText":"هذا التطبيق يجد كوبونات يوديمي بخصم 100% ويسجّلك تلقائيًا. خطوتان سريعتان وتكون جاهزًا.",
+  "ob.skip":"لاحقًا","ob.next":"التالي","ob.login":"سجّل الدخول إلى يوديمي",
+  "ob.loginText":"سيُفتح متصفح. سجّل الدخول بالبريد وكلمة المرور والرمز المكوّن من 6 أرقام الذي تصلك عبر البريد. التطبيق يكتشف ذلك تلقائيًا.",
+  "ob.openBrowser":"افتح المتصفح وسجّل الدخول","ob.waiting":"بانتظار إكمال تسجيل الدخول…",
+  "ob.done":"كل شيء جاهز 🎉","ob.doneText":"اضغط ابدأ التسجيل وقتما تشاء. اضبط الفلاتر للحصول على دورات بلغتك فقط.",
+  "ob.finish":"ابدأ استخدام التطبيق",
+  "toast.loginOk":"تم تسجيل الدخول بنجاح!","toast.loginFail":"لم يكتمل تسجيل الدخول — حاول مجددًا",
+  "toast.needLogin":"سجّل الدخول أولًا — يستغرق دقيقة","toast.saved":"تم الحفظ",
+  "notify.done":"اكتملت الجولة"
+}};
+let lang="en";
+const t=k=>((I18N[lang]&&I18N[lang][k])||I18N.en[k]||k);
+function applyI18n(){
+  document.documentElement.lang=lang;
+  document.documentElement.dir=(lang==="ar")?"rtl":"ltr";
+  document.querySelectorAll("[data-i18n]").forEach(el=>el.textContent=t(el.dataset.i18n));
+  document.querySelectorAll("[data-i18n-ph]").forEach(el=>el.placeholder=t(el.dataset.i18nPh));
+  document.querySelectorAll("#seg-lang button").forEach(b=>b.classList.toggle("on",b.dataset.val===lang));
+}
+
+/* ─── State ─────────────────────────────────────────────────────────────── */
+let state={logged_in:false,running:false,bridging:false,version:"",releases_url:"",repo_url:"",
+           lang_options:[],cat_options:[],browsers:[]};
+let prefs={};
+let filters={languages:[],categories:[]};
+let saveTimer=null;
+
+/* ─── Python bridge ─────────────────────────────────────────────────────── */
+function api(method,args){
+  if(window.pywebview&&window.pywebview.api&&window.pywebview.api[method]){
+    return window.pywebview.api[method](args||{});
+  }
+  return Promise.resolve(null);
+}
+window.addEventListener("pywebviewready",init);
+document.addEventListener("DOMContentLoaded",()=>{
+  applyI18n();renderAll();          // paint immediately with defaults
+  if(window.pywebview)init();
+  let tries=0;                       // fallback: poll for the bridge briefly
+  const poll=setInterval(()=>{if(window.pywebview){clearInterval(poll);init();}else if(++tries>50)clearInterval(poll);},100);
+});
+let inited=false;
+async function init(){
+  if(inited)return; inited=true;
+  const s=await api("get_state");
+  if(!s)return;
+  Object.assign(state,s.state);
+  prefs=s.prefs||{}; filters=s.filters||{languages:[],categories:[]};
+  lang=(prefs.ui_language==="ar")?"ar":"en";
+  applyTheme(prefs.theme||"dark");
+  applyI18n();
+  renderAll();
+  if(!state.logged_in && !prefs.onboarded) showOb();
+  if(s.update_tag){document.getElementById("update-banner").classList.add("show");}
+}
+
+/* Python calls this */
+const app={
+  push(ev){
+    try{handle(ev);}catch(e){}
+  }
+};
+function handle(ev){
+  if(ev.type==="log"){
+    const el=document.getElementById("log");
+    const stick=el.scrollTop+el.clientHeight>=el.scrollHeight-40;
+    for(const l of ev.lines){
+      const s=document.createElement("span");
+      if(l.tag)s.className="lg-"+l.tag;
+      s.textContent=l.text;
+      el.appendChild(s);
+    }
+    while(el.childNodes.length>4000)el.removeChild(el.firstChild);
+    if(stick)el.scrollTop=el.scrollHeight;
+  }
+  else if(ev.type==="progress"){renderProgress(ev.data);}
+  else if(ev.type==="run_state"){state.running=ev.running;state.bridging=ev.bridging;renderHero();
+    if(ev.running){resetRunUi();}}
+  else if(ev.type==="login"){
+    state.logged_in=ev.logged_in;renderHero();
+    if(ev.logged_in){toast(t("toast.loginOk"));if(obOpen)obStep(3);}
+    else if(obOpen){document.getElementById("ob-wait").style.display="none";toast(t("toast.loginFail"));}
+  }
+  else if(ev.type==="course"){addCourse(ev.data);}
+  else if(ev.type==="result"){showResult(ev.data);}
+  else if(ev.type==="update"){document.getElementById("update-banner").classList.add("show");}
+}
+
+/* ─── Rendering ─────────────────────────────────────────────────────────── */
+function renderAll(){renderHero();renderChips();renderSettings();document.getElementById("ver").textContent="v"+state.version;}
+
+function renderHero(){
+  const pill=document.getElementById("login-pill");
+  pill.innerHTML=state.logged_in
+    ?`<span class="pill ok"><span class="dot"></span>${t("home.loggedIn")}</span>`
+    :`<span class="pill bad"><span class="dot"></span>${t("home.notLoggedIn")}</span>`;
+  const start=document.getElementById("btn-start"),stop=document.getElementById("btn-stop"),login=document.getElementById("btn-login");
+  const busy=state.running||state.bridging;
+  start.style.display=state.logged_in?"":"none";
+  start.disabled=busy;
+  start.innerHTML=state.running?`<span class="spinner"></span>&nbsp; ${t("home.searching")}`:t("home.start");
+  stop.style.display=busy?"":"none";
+  login.style.display=(!state.logged_in)?"":"none";
+  login.textContent=t("home.loginCta");
+  login.disabled=busy;
+  if(!busy){document.getElementById("progress-wrap").classList.remove("show");}
+  else{document.getElementById("progress-wrap").classList.add("show");}
+}
+
+function resetRunUi(){
+  document.getElementById("result").classList.remove("show");
+  document.getElementById("courses").classList.remove("show");
+  document.getElementById("course-list").innerHTML="";
+  document.getElementById("stat-grid").style.display="none";
+  const bar=document.getElementById("bar");bar.classList.add("indet");
+  document.getElementById("bar-fill").style.width="0%";
+  document.getElementById("p-count").textContent=t("home.searching");
+  document.getElementById("p-detail").textContent="";
+}
+
+function renderProgress(p){
+  if(!p.total)return;
+  const bar=document.getElementById("bar");
+  bar.classList.remove("indet");
+  document.getElementById("bar-fill").style.width=Math.min(100,100*p.processed/p.total)+"%";
+  document.getElementById("p-count").textContent=t("home.progressOf").replace("{a}",p.processed).replace("{b}",p.total);
+  document.getElementById("p-detail").textContent=`${t("home.enrolled")} ${p.enrolled} · ${t("home.skipped")} ${p.already+p.skipped+p.expired}`;
+  document.getElementById("stat-grid").style.display="grid";
+  document.getElementById("s-enrolled").textContent=p.enrolled;
+  document.getElementById("s-skipped").textContent=p.skipped+p.expired;
+  document.getElementById("s-already").textContent=p.already;
+  document.getElementById("s-total").textContent=p.total;
+}
+
+function addCourse(c){
+  const wrap=document.getElementById("courses");wrap.classList.add("show");
+  const d=document.createElement("div");d.className="course";
+  const url=c.url;
+  d.innerHTML=`<span class="t"></span><button class="open">${t("home.open")}</button>`;
+  d.querySelector(".t").textContent=c.title;
+  d.querySelector(".open").onclick=()=>api("open_url",{url});
+  document.getElementById("course-list").appendChild(d);
+}
+
+function showResult(r){
+  if(r.enrolled===0&&!r.savings)return;
+  let txt=(r.enrolled===1?t("home.resultOne"):t("home.resultMany")).replace("{n}",r.enrolled);
+  if(r.savings)txt+=" "+t("home.saved").replace("{s}",r.savings);
+  document.getElementById("result-text").textContent=txt;
+  document.getElementById("result").classList.add("show");
+}
+
+/* filter chips */
+function chipGroup(id,options,selected,kind){
+  const wrap=document.getElementById(id);wrap.innerHTML="";
+  const sel=selected.map(x=>x.toLowerCase());
+  const custom=selected.filter(v=>!options.some(o=>o.toLowerCase()===v.toLowerCase()));
+  for(const name of options){
+    const b=document.createElement("button");b.className="chip"+(sel.includes(name.toLowerCase())?" on":"");
+    b.textContent=name;
+    b.onclick=()=>{toggleFilter(kind,name);};
+    wrap.appendChild(b);
+  }
+  for(const name of custom){
+    const b=document.createElement("button");b.className="chip on";
+    b.innerHTML=`<span></span><span class="x">✕</span>`;
+    b.firstChild.textContent=name;
+    b.onclick=()=>{toggleFilter(kind,name);};
+    wrap.appendChild(b);
+  }
+}
+function renderChips(){
+  chipGroup("chips-lang",state.lang_options,filters.languages,"lang");
+  chipGroup("chips-cat",state.cat_options,filters.categories,"cat");
+}
+function listOf(kind){return kind==="lang"?filters.languages:filters.categories;}
+function toggleFilter(kind,name){
+  const list=listOf(kind);
+  const i=list.findIndex(v=>v.toLowerCase()===name.toLowerCase());
+  if(i>=0)list.splice(i,1);else list.push(name);
+  renderChips();queueSaveFilters();
+}
+function addOther(kind){
+  const input=document.getElementById(kind==="lang"?"other-lang":"other-cat");
+  const parts=input.value.replace(/،/g,",").split(",").map(s=>s.trim()).filter(Boolean);
+  const list=listOf(kind);
+  for(const p of parts){if(!list.some(v=>v.toLowerCase()===p.toLowerCase()))list.push(p);}
+  input.value="";renderChips();queueSaveFilters();
+}
+function clearGroup(kind){
+  const list=listOf(kind);list.length=0;renderChips();queueSaveFilters();
+}
+function queueSaveFilters(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(async()=>{await api("save_filters",{languages:filters.languages,categories:filters.categories});toast(t("filters.saved"));},500);
+}
+
+/* settings */
+function renderSettings(){
+  const selB=document.getElementById("sel-browser"),obB=document.getElementById("ob-browser");
+  for(const el of [selB,obB]){
+    el.innerHTML="";
+    for(const b of state.browsers){
+      const o=document.createElement("option");o.value=b.value;o.textContent=b.label;el.appendChild(o);
+    }
+    el.value=prefs.browser||((state.browsers[0]||{}).value||"brave");
+  }
+  document.querySelectorAll("#seg-theme button").forEach(b=>b.classList.toggle("on",b.dataset.val===(prefs.theme||"dark")));
+  document.getElementById("sw-autorun").classList.toggle("on",!!prefs.auto_run_enabled);
+  document.getElementById("row-autorun-int").style.display=prefs.auto_run_enabled?"":"none";
+  document.getElementById("sel-autorun").value=String(prefs.auto_run_hours||12);
+  document.getElementById("sw-debug").classList.toggle("on",!!prefs.debug);
+  document.getElementById("sel-pages").value=String(prefs.max_pages||5);
+  const chips=document.getElementById("chips-scrapers");chips.innerHTML="";
+  const scr=prefs.scrapers||{};
+  for(const name of ["discudemy","idownloadcoupon","freebiesglobal","tutorialbar","coursevania"]){
+    const b=document.createElement("button");b.className="chip"+(scr[name]?" on":"");
+    b.textContent=name;
+    b.onclick=()=>{scr[name]=!scr[name];prefs.scrapers=scr;savePrefs();renderSettings();};
+    chips.appendChild(b);
+  }
+}
+function savePrefs(){api("save_prefs",{prefs});}
+function setLang(v){lang=v;prefs.ui_language=v;savePrefs();applyI18n();renderAll();}
+function setTheme(v){prefs.theme=v;savePrefs();applyTheme(v);renderSettings();}
+function applyTheme(v){
+  const dark=v==="dark"||(v==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.dataset.theme=dark?"dark":"light";
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{if((prefs.theme||"dark")==="system")applyTheme("system");});
+function toggleAutorun(){prefs.auto_run_enabled=!prefs.auto_run_enabled;savePrefs();renderSettings();}
+
+/* actions */
+async function startRun(){
+  const r=await api("start_enrollment");
+  if(r&&r.error==="not_logged_in")toast(t("toast.needLogin"));
+}
+async function startLogin(){
+  document.getElementById("ob-wait").style.display="";
+  await api("start_login");
+}
+
+/* navigation */
+document.querySelectorAll(".nav-btn").forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll(".nav-btn").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+    document.getElementById("page-"+b.dataset.page).classList.add("active");
+  };
+});
+
+/* onboarding */
+let obOpen=false;
+function showOb(){obOpen=true;document.getElementById("overlay").classList.add("show");}
+function closeOb(){obOpen=false;document.getElementById("overlay").classList.remove("show");
+  prefs.onboarded=true;savePrefs();}
+function obStep(n){
+  for(const i of [1,2,3]){
+    document.getElementById("ob-"+i).style.display=(i===n)?"":"none";
+    document.getElementById("st"+i).classList.toggle("on",i<=n);
+  }
+}
+function markSeg(btn){btn.parentElement.querySelectorAll("button").forEach(b=>b.classList.remove("on"));btn.classList.add("on");}
+
+/* toast */
+let toastTimer=null;
+function toast(msg){
+  const el=document.getElementById("toast");el.textContent=msg;el.classList.add("show");
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove("show"),2200);
+}
+</script>
+</body>
+</html>

@@ -2,5 +2,5 @@
 #   pip install -r requirements-build.txt
 #   pyinstaller udemy_enroller_gui.spec
 -r requirements.txt
-customtkinter
+pywebview
 pyinstaller==6.11.1

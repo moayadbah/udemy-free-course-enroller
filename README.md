@@ -104,38 +104,33 @@ pip install .
 
 ## GUI
 
-`gui.py` provides a modern desktop interface (built on
-[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) — dark/light mode,
-rounded design).
+`gui.py` provides a modern desktop app: the interface is a web UI (HTML/CSS/JS in
+`web/index.html`) rendered in your OS's native engine via
+[pywebview](https://pywebview.flowrl.com) — smooth scrolling, dark/light themes,
+and full Arabic (RTL) support.
 
 ```
-pip install customtkinter
+pip install pywebview
 python3 gui.py
 ```
 
-It has two tabs:
+Four pages in a sidebar:
 
-**Setup tab**
-
-| Section | What it does |
+| Page | What it does |
 |---|---|
-| **Getting Started** | A short 3-step walkthrough for first-time users |
-| **Login Browser** | Dropdown to pick the browser used by Bridge Cookies: Brave / Chrome / Edge / Chromium |
-| **Scrapers** | Toggles for each coupon site; max-pages slider; debug switch |
-| **Course Filters** | Pick languages and categories from checkboxes (plus an "Other" field) — saved to settings.yaml before each run |
-| **Setup Status** | Readiness check: turns green once you're logged in, with a one-click "Log in now" button |
+| **Home** | Login status, one big *Start Enrolling* button, live progress ("Course 12 of 43 · Enrolled 8 · Skipped 3"), end-of-run savings summary, and clickable links to every course you just enrolled in |
+| **Filters** | Tap language and category chips to only enroll in what you want — nothing selected = accept everything |
+| **Activity** | Full colour-coded live log |
+| **Settings** | Login browser (auto-detects what's installed), interface language (English/العربية), theme, automatic scheduled runs, and Advanced options (coupon sources, max pages, debug) |
 
-**Run tab**
+First launch shows a short guided setup. The app remembers all your choices,
+sends a desktop notification when a run finishes, can re-run itself automatically
+every few hours while open, and checks GitHub for newer releases on startup.
 
-| Control | What it does |
-|---|---|
-| **Bridge Cookies** | Opens the selected browser in-app; once you log in, it detects it automatically and saves your session (label updates to match your choice) |
-| **Start / Stop** | Runs the enroller (REST mode) with a live progress bar ("Course 12 / 43 · Enrolled 8 · Skipped 3") and an end-of-run savings summary |
-| **Log** | Colour-coded: green = enrolled, red = error, yellow = already claimed / expired |
-
-The app remembers your browser, scraper, filter, and appearance choices between
-launches, and checks GitHub for newer releases on startup (System/Light/Dark theme
-switch is in the top-right corner).
+> **Windows note:** the interface uses Microsoft Edge WebView2, which is
+> preinstalled on Windows 11 and virtually all updated Windows 10 systems. If the
+> app window comes up empty, install the
+> [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 
 ---
 
