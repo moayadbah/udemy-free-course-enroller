@@ -162,6 +162,16 @@ on its own runner.
 
 ---
 
+## Chrome Extension (alternative to the desktop app)
+
+There's also a **[Chrome extension](chrome-extension/)** version. It runs inside your own
+browser where you're already signed in to Udemy, so there's no separate login step, no
+Cloudflare/2FA bridge, and nothing to download or unblock — the browser handles everything.
+See [chrome-extension/README.md](chrome-extension/README.md) for install steps (currently a
+"Load unpacked" install — no Chrome Web Store listing yet).
+
+---
+
 ## Bridge Cookies (First-time / Cookie Expired)
 
 When your auth cookie is missing or expired, run (browser is optional, default `brave`):

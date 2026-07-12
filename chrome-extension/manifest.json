@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Udemy Free Course Enroller",
+  "version": "1.0.0",
+  "description": "Auto-enroll in free Udemy courses using coupon scrapers — runs in your logged-in browser, no separate login needed.",
+  "permissions": ["storage", "alarms", "tabs", "scripting", "notifications"],
+  "host_permissions": [
+    "*://*.udemy.com/*",
+    "*://discudemy.com/*",
+    "*://*.discudemy.com/*",
+    "*://idownloadcoupon.com/*",
+    "*://*.idownloadcoupon.com/*",
+    "*://freebiesglobal.com/*",
+    "*://*.freebiesglobal.com/*"
+  ],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Udemy Free Course Enroller" },
+  "content_scripts": [
+    {
+      "matches": ["*://www.udemy.com/*"],
+      "js": ["udemy-agent.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

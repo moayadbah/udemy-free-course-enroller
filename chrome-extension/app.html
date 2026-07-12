@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Udemy Free Course Enroller</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div id="logo">U</div>
+    <div>
+      <h1>Udemy Free Course Enroller</h1>
+      <div class="sub">Runs in your logged-in browser — no separate sign-in</div>
+    </div>
+    <div class="grow"></div>
+    <span id="status"></span>
+    <div class="seg" id="theme-seg" style="margin-left:10px">
+      <button data-val="dark">Dark</button>
+      <button data-val="light">Light</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="actions">
+      <button class="btn primary" id="start">Start Enrolling</button>
+      <button class="btn danger" id="stop" style="display:none">Stop</button>
+      <button class="btn small" id="open-udemy" style="display:none">Open Udemy to log in ↗</button>
+    </div>
+    <div id="progress" style="display:none">
+      <div class="bar indet" id="bar"><i></i></div>
+      <div id="pmeta"><span id="pcount"></span><span id="pdetail"></span></div>
+      <div id="stats">
+        <div class="stat"><b id="s-enr">0</b><span>Enrolled</span></div>
+        <div class="stat"><b id="s-skip">0</b><span>Skipped</span></div>
+        <div class="stat"><b id="s-own">0</b><span>Owned</span></div>
+        <div class="stat"><b id="s-tot">0</b><span>Found</span></div>
+      </div>
+    </div>
+    <div id="result"></div>
+  </div>
+
+  <div class="card" id="courses-card" style="display:none">
+    <h2>Enrolled this run</h2>
+    <div id="courses"></div>
+  </div>
+
+  <div class="card">
+    <h2>Filters <span class="hint" style="font-weight:400">— nothing selected = accept all</span></h2>
+    <div class="spread"><b style="font-size:12.5px">Languages</b>
+      <button class="btn small" id="clear-lang">Clear</button></div>
+    <div class="chips" id="chips-lang"></div>
+    <div class="spread" style="margin-top:14px"><b style="font-size:12.5px">Categories</b>
+      <button class="btn small" id="clear-cat">Clear</button></div>
+    <div class="chips" id="chips-cat"></div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>Advanced</summary>
+      <div style="margin-top:14px">
+        <div class="spread" style="margin-bottom:4px"><b style="font-size:12.5px">Coupon sources</b></div>
+        <div class="chips" id="chips-scrapers"></div>
+        <div class="set-row" style="margin-top:8px">
+          <div><b style="font-size:13px">Max pages per source</b>
+            <div class="hint">More pages = more coupons, slower runs</div></div>
+          <select class="field" id="max-pages">
+            <option>1</option><option>2</option><option>3</option><option>5</option><option>10</option>
+          </select>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <div class="spread"><h2 style="margin:0">Activity log</h2>
+      <button class="btn small" id="clear-log">Clear</button></div>
+    <div id="log"></div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
