@@ -1,4 +1,5 @@
 """HTTP helpers."""
+
 import ssl
 
 import aiohttp
@@ -14,6 +15,22 @@ logger = get_logger()
 _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 
+def _build_session() -> aiohttp.ClientSession:
+    """
+    Create a session that resolves DNS with the OS resolver.
+
+    When aiodns is present, aiohttp uses the c-ares async resolver — and in
+    packaged Windows builds c-ares frequently cannot read the system's DNS
+    server list, failing every request with "Could not contact DNS servers".
+    Forcing ThreadedResolver routes lookups through socket.getaddrinfo, the
+    same resolver requests/cloudscraper already use successfully.
+    """
+    connector = aiohttp.TCPConnector(
+        resolver=aiohttp.ThreadedResolver(), ssl=_SSL_CONTEXT
+    )
+    return aiohttp.ClientSession(connector=connector)
+
+
 async def http_get(url, headers=None):
     """
     Send REST get request to the url passed in.
@@ -25,10 +42,8 @@ async def http_get(url, headers=None):
     if headers is None:
         headers = {}
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url, headers=headers, ssl=_SSL_CONTEXT
-            ) as response:
+        async with _build_session() as session:
+            async with session.get(url, headers=headers) as response:
                 text = await response.read()
                 return text
     except Exception as e:
@@ -49,9 +64,9 @@ async def http_get_final_url(url, headers=None):
     if headers is None:
         headers = {}
     try:
-        async with aiohttp.ClientSession() as session:
+        async with _build_session() as session:
             async with session.get(
-                url, headers=headers, allow_redirects=True, ssl=_SSL_CONTEXT
+                url, headers=headers, allow_redirects=True
             ) as response:
                 await response.read()
                 return str(response.url)

@@ -13,7 +13,7 @@ import time
 import webbrowser
 from typing import Dict, List, Optional, Tuple
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 GITHUB_REPO = "moayadbah/udemy-free-course-enroller"
 REPO_URL = f"https://github.com/{GITHUB_REPO}"
 RELEASES_URL = f"{REPO_URL}/releases/latest"
