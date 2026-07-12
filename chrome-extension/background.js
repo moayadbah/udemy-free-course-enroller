@@ -114,18 +114,24 @@ async function agent(tabId, op, args) {
   return resp ? resp.result : null;
 }
 
-async function checkLoginStatus() {
-  // Non-intrusive: only looks at a Udemy tab if one is already open, so just
-  // viewing the app page never opens a new tab on its own.
-  const tab = await findUdemyTab();
-  if (!tab) return { logged_in: false };
+// Reliable, tab-independent login check: read the Udemy auth cookie directly
+// from the browser's cookie jar (the same "access_token" the desktop app
+// checks). This works whether or not a Udemy tab is currently open and isn't
+// affected by SameSite rules the way a cross-origin fetch would be.
+async function isLoggedIn() {
   try {
-    if (!(await ensureAgentReady(tab.id))) return { logged_in: false };
-    const ctx = await agent(tab.id, "contextMe");
-    return { logged_in: !!ctx.logged_in };
+    const cookie = await chrome.cookies.get({
+      url: "https://www.udemy.com/",
+      name: "access_token",
+    });
+    return !!(cookie && cookie.value);
   } catch (e) {
-    return { logged_in: false };
+    return false;
   }
+}
+
+async function checkLoginStatus() {
+  return { logged_in: await isLoggedIn() };
 }
 
 // ── Coupon scrapers (regex-based; no DOM in a worker) ───────────────────────
@@ -279,6 +285,15 @@ async function startRun() {
   PROG = freshProgress();
   pushProgress();
 
+  // Confirm login from the cookie jar first — no need to open a tab just to
+  // discover the user isn't signed in.
+  if (!(await isLoggedIn())) {
+    log("You're not logged in to Udemy in this browser.", "error");
+    broadcast({ type: "login", logged_in: false });
+    return finishRun();
+  }
+  broadcast({ type: "login", logged_in: true });
+
   let tabId;
   try {
     tabId = await ensureUdemyTab();
@@ -287,21 +302,14 @@ async function startRun() {
     return finishRun();
   }
 
-  // Confirm the user is logged in to Udemy in this browser.
-  let ctx;
+  // Grab the account currency (needed for the checkout payload); default if
+  // the context call fails for any reason.
   try {
-    ctx = await agent(tabId, "contextMe");
+    const ctx = await agent(tabId, "contextMe");
+    if (ctx && ctx.currency) PROG.currency = ctx.currency;
   } catch (e) {
-    log("Could not read Udemy session: " + e.message, "error");
-    return finishRun();
+    /* keep default USD */
   }
-  if (!ctx.logged_in) {
-    log("You're not logged in to Udemy in this browser.", "error");
-    broadcast({ type: "login", logged_in: false });
-    return finishRun();
-  }
-  PROG.currency = ctx.currency;
-  broadcast({ type: "login", logged_in: true });
 
   const prefs = await getPrefs();
   log("Loading your existing courses…", "info");

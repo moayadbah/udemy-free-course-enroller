@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Udemy Free Course Enroller",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Auto-enroll in free Udemy courses using coupon scrapers — runs in your logged-in browser, no separate login needed.",
-  "permissions": ["storage", "alarms", "tabs", "scripting", "notifications"],
+  "permissions": ["storage", "alarms", "tabs", "scripting", "notifications", "cookies"],
   "host_permissions": [
     "*://*.udemy.com/*",
     "*://discudemy.com/*",
