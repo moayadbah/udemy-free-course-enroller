@@ -13,7 +13,7 @@ import time
 import webbrowser
 from typing import Dict, List, Optional, Tuple
 
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 GITHUB_REPO = "moayadbah/udemy-free-course-enroller"
 REPO_URL = f"https://github.com/{GITHUB_REPO}"
 RELEASES_URL = f"{REPO_URL}/releases/latest"
@@ -466,6 +466,17 @@ class Backend:
             self._running = True
 
         prefs = _load_prefs()
+        # Guarantee a complete settings.yaml (with null email/password/zipcode)
+        # exists before launching the enroller. Otherwise, on a machine where
+        # no filter was ever set, the enroller's Settings loader falls through
+        # to an interactive input() prompt for the email — which raises
+        # EOFError in the windowed frozen app (no console/stdin). Enrollment
+        # relies on the bridged cookie, not these credentials.
+        try:
+            current = self.filters_from_settings()
+            self.save_filters(current["languages"], current["categories"])
+        except Exception as exc:
+            self.log_line(f"Warning: could not write settings: {exc}\n", "warn")
         self._reset_progress()
         self._stop_event.clear()
         self.push_run_state()
