@@ -66,20 +66,43 @@ async function findUdemyTab() {
   return tabs.length ? tabs[0] : null;
 }
 
+async function pingTab(tabId) {
+  try {
+    const r = await chrome.tabs.sendMessage(tabId, { agent: true, op: "ping" });
+    return !!(r && r.ok);
+  } catch (e) {
+    return false;
+  }
+}
+
+// Chrome only auto-injects a manifest-declared content script into tabs that
+// NAVIGATE after the extension is loaded. A Udemy tab the user already had
+// open before installing/reloading the extension never gets it — so if a
+// plain ping fails, inject it on demand instead of assuming "not logged in".
+async function ensureAgentReady(tabId) {
+  if (await pingTab(tabId)) return true;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["udemy-agent.js"] });
+  } catch (e) {
+    return false; // e.g. tab navigated away or isn't a udemy.com page anymore
+  }
+  for (let i = 0; i < 10; i++) {
+    if (await pingTab(tabId)) return true;
+    await sleep(200);
+  }
+  return false;
+}
+
 async function ensureUdemyTab() {
   let tab = await findUdemyTab();
   if (!tab) {
     log("Opening a Udemy tab for your session…", "info");
     tab = await chrome.tabs.create({ url: "https://www.udemy.com/", active: false });
   }
-  // Wait until the content script answers a ping (page + script ready).
+  // Wait until the content script answers a ping (page + script ready),
+  // injecting it manually if this tab predates the extension being loaded.
   for (let i = 0; i < 40; i++) {
-    try {
-      const r = await chrome.tabs.sendMessage(tab.id, { agent: true, op: "ping" });
-      if (r && r.ok) return tab.id;
-    } catch (e) {
-      /* not ready yet */
-    }
+    if (await ensureAgentReady(tab.id)) return tab.id;
     await sleep(500);
   }
   throw new Error("Could not reach the Udemy tab. Open www.udemy.com and retry.");
@@ -97,8 +120,7 @@ async function checkLoginStatus() {
   const tab = await findUdemyTab();
   if (!tab) return { logged_in: false };
   try {
-    const r = await chrome.tabs.sendMessage(tab.id, { agent: true, op: "ping" });
-    if (!r || !r.ok) return { logged_in: false };
+    if (!(await ensureAgentReady(tab.id))) return { logged_in: false };
     const ctx = await agent(tab.id, "contextMe");
     return { logged_in: !!ctx.logged_in };
   } catch (e) {
@@ -456,6 +478,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   })();
   return true;
 });
+
+// Any Udemy tab that was already open before this extension was loaded never
+// received the manifest-declared content script (Chrome only auto-injects on
+// navigations that happen after load). Inject it immediately on install/
+// reload/browser-restart so login is detected right away, with no need for
+// the user to refresh their existing tab.
+async function injectIntoExistingUdemyTabs() {
+  try {
+    const tabs = await chrome.tabs.query({ url: "*://www.udemy.com/*" });
+    for (const tab of tabs) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ["udemy-agent.js"],
+        });
+      } catch (e) {
+        /* tab may have navigated away or be otherwise inaccessible */
+      }
+    }
+  } catch (e) {
+    /* ignore */
+  }
+}
+chrome.runtime.onInstalled.addListener(injectIntoExistingUdemyTabs);
+chrome.runtime.onStartup.addListener(injectIntoExistingUdemyTabs);
 
 // Toolbar icon opens the full app page (focus if already open).
 chrome.action.onClicked.addListener(async () => {
